@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [dollarRate, setDollarRate] = useState(5.5);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [hideValues, setHideValues] = useState(false);
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -99,12 +100,15 @@ export default function DashboardPage() {
       onSyncPrices={handleSyncPrices}
       isSyncing={syncing}
       onImportExcel={() => setImportDialogOpen(true)}
+      hideValues={hideValues}
+      onToggleHideValues={() => setHideValues((v) => !v)}
     >
       <PortfolioSummary
         transactions={transactions}
         stockPrices={stockPrices}
         dollarRate={dollarRate}
         onDollarRateChange={setDollarRate}
+        hideValues={hideValues}
       />
       <TransactionList
         transactions={transactions}

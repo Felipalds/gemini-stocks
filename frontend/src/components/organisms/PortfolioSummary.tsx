@@ -24,13 +24,17 @@ interface PortfolioSummaryProps {
   stockPrices: StockPriceInfo[];
   dollarRate: number;
   onDollarRateChange: (rate: number) => void;
+  hideValues?: boolean;
 }
+
+const HIDDEN = "••••••";
 
 export function PortfolioSummary({
   transactions,
   stockPrices,
   dollarRate,
   onDollarRateChange,
+  hideValues,
 }: PortfolioSummaryProps) {
   const [rateInput, setRateInput] = useState(String(dollarRate));
 
@@ -159,16 +163,19 @@ export function PortfolioSummary({
         </CardHeader>
         <CardContent className="space-y-1">
           <div className="text-3xl font-bold">
-            {formatCurrency(totalInBRL, "BRL")}
+            {hideValues ? HIDDEN : formatCurrency(totalInBRL, "BRL")}
           </div>
           <p
-            className={`text-sm font-semibold ${isPnlPositive ? "text-emerald-600" : "text-red-600"}`}
+            className={`text-sm font-semibold ${hideValues ? "text-muted-foreground" : isPnlPositive ? "text-emerald-600" : "text-red-600"}`}
           >
-            {isPnlPositive ? "+" : ""}
-            {formatCurrency(totalPnlInBRL, "BRL")} earnings
+            {hideValues
+              ? HIDDEN
+              : `${isPnlPositive ? "+" : ""}${formatCurrency(totalPnlInBRL, "BRL")} earnings`}
           </p>
           <p className="text-xs text-muted-foreground">
-            {formatCurrency(totalUSD, "USD")} in dollar
+            {hideValues
+              ? HIDDEN
+              : `${formatCurrency(totalUSD, "USD")} in dollar`}
           </p>
           <div className="flex items-center gap-2 pt-2">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">

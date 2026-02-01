@@ -7,6 +7,8 @@ import {
   CloudDownload,
   Briefcase,
   FileSpreadsheet,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 
@@ -17,6 +19,8 @@ interface DashboardLayoutProps {
   onSyncPrices?: () => void;
   isSyncing?: boolean;
   onImportExcel?: () => void;
+  hideValues?: boolean;
+  onToggleHideValues?: () => void;
 }
 
 export function DashboardLayout({
@@ -26,6 +30,8 @@ export function DashboardLayout({
   onSyncPrices,
   isSyncing,
   onImportExcel,
+  hideValues,
+  onToggleHideValues,
 }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/40 p-8 font-sans">
@@ -89,6 +95,16 @@ export function DashboardLayout({
             </Link>
 
             <ModeToggle />
+
+            {onToggleHideValues && (
+              <Button variant="ghost" size="icon" onClick={onToggleHideValues}>
+                {hideValues ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </Button>
+            )}
           </div>
         </header>
 

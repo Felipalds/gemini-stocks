@@ -18,6 +18,7 @@ export default function PortfolioPage() {
   const [stockPrices, setStockPrices] = useState<StockPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [hideValues, setHideValues] = useState(false);
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -152,6 +153,8 @@ export default function PortfolioPage() {
       isLoading={loading}
       onSyncPrices={handleSyncPrices}
       isSyncing={syncing}
+      hideValues={hideValues}
+      onToggleHideValues={() => setHideValues((v) => !v)}
     >
       {tickers.length === 0 && !loading ? (
         <div className="text-center py-10 text-muted-foreground">
@@ -176,6 +179,7 @@ export default function PortfolioPage() {
                 key={ticker.symbol}
                 ticker={ticker}
                 onEdited={fetchData}
+                hideValues={hideValues}
                 className={
                   span === 6
                     ? "col-span-6"

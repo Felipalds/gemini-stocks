@@ -19,13 +19,21 @@ export interface TickerData {
   currency: string;
 }
 
+const HIDDEN = "••••••";
+
 interface TickerCardProps {
   ticker: TickerData;
   onEdited: () => void;
   className?: string;
+  hideValues?: boolean;
 }
 
-export function TickerCard({ ticker, onEdited, className }: TickerCardProps) {
+export function TickerCard({
+  ticker,
+  onEdited,
+  className,
+  hideValues,
+}: TickerCardProps) {
   const [editOpen, setEditOpen] = useState(false);
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
   const isPositive = ticker.pnl >= 0;
@@ -72,29 +80,38 @@ export function TickerCard({ ticker, onEdited, className }: TickerCardProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
-          <div className="text-2xl font-bold">{fmt(ticker.totalValue)}</div>
+          <div className="text-2xl font-bold">
+            {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+          </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <span className="text-muted-foreground">Shares</span>
-            <span className="text-right font-medium">{ticker.netQuantity}</span>
+            <span className="text-right font-medium">
+              {hideValues ? HIDDEN : ticker.netQuantity}
+            </span>
 
             <span className="text-muted-foreground">Avg Buy Price</span>
             <span className="text-right font-medium">
-              {fmt(ticker.avgBuyPrice)}
+              {hideValues ? HIDDEN : fmt(ticker.avgBuyPrice)}
             </span>
 
             <span className="text-muted-foreground">Current Price</span>
             <span className="text-right font-medium">
-              {fmt(ticker.currentPrice)}
+              {hideValues ? HIDDEN : fmt(ticker.currentPrice)}
             </span>
 
             <span className="text-muted-foreground">P&L</span>
             <span
               className={`text-right font-bold ${
-                isPositive ? "text-emerald-600" : "text-red-600"
+                hideValues
+                  ? "text-muted-foreground"
+                  : isPositive
+                    ? "text-emerald-600"
+                    : "text-red-600"
               }`}
             >
-              {isPositive ? "+" : ""}
-              {fmt(ticker.pnl)}
+              {hideValues
+                ? HIDDEN
+                : `${isPositive ? "+" : ""}${fmt(ticker.pnl)}`}
             </span>
           </div>
 
