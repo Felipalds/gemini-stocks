@@ -60,6 +60,8 @@ func main() {
 	financeService := services.NewFinanceService(sugar)
 
 	//handlers
+
+	dataHandler := handlers.NewDataHandler(db, sugar)
 	transactionHandler := handlers.NewTransactionHandler(db, sugar, financeService)
 	priceHandler := handlers.NewPriceHandler(db, sugar, financeService)
 
@@ -80,7 +82,15 @@ func main() {
 		r.Delete("/{id}", transactionHandler.Delete)
 	})
 
-	r.Post("/prices/refresh", priceHandler.RefreshPrices)
+	r.Route("/data", func(r chi.Router) {
+		r.Get("/summary", dataHandler.GetSummary)
+	})
+
+	r.Route("/prices", func(r chi.Router) {
+		r.Get("/", priceHandler.GetAll)
+		r.Post("/refresh", priceHandler.RefreshPrices)
+		r.Put("/", priceHandler.UpdatePrice)
+	})
 
 	// 6. Start Server
 	port := os.Getenv("PORT")

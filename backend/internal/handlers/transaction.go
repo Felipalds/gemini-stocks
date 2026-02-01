@@ -52,6 +52,11 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default currency to USD if not provided
+	if tx.Currency == "" {
+		tx.Currency = "USD"
+	}
+
 	// --- NEW LOGIC START ---
 	// 3. Ensure the Stock Ticker exists in our Price Cache table
 	var stock models.StockPrice
@@ -69,8 +74,9 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 		// B. Save to stock_prices table
 		newStock := models.StockPrice{
-			Symbol: tx.Symbol,
-			Price:  currentPrice,
+			Symbol:   tx.Symbol,
+			Price:    currentPrice,
+			Currency: tx.Currency,
 		}
 		if err := h.DB.Create(&newStock).Error; err != nil {
 			h.Logger.Error("Failed to save new stock ticker", zap.Error(err))

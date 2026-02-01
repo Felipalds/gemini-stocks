@@ -24,7 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
 import { type Transaction } from "@/types";
-import { MoreHorizontal, Trash, Edit } from "lucide-react"; // Icons
+import { formatCurrency } from "@/lib/format";
+import { MoreHorizontal, Trash, Edit } from "lucide-react";
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -37,13 +38,6 @@ export function TransactionList({
   isLoading,
   onDelete,
 }: TransactionListProps) {
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-    }).format(val);
-
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-US", {
       day: "2-digit",
@@ -103,11 +97,11 @@ export function TransactionList({
                   </TableCell>
                   <TableCell className="text-right">{t.quantity}</TableCell>
                   <TableCell className="text-right">
-                    {formatCurrency(t.price)}
+                    {formatCurrency(t.price, t.currency)}
                   </TableCell>
                   <TableCell className="text-right font-medium bg-muted/10">
                     {t.current_price ? (
-                      formatCurrency(t.current_price)
+                      formatCurrency(t.current_price, t.currency)
                     ) : (
                       <span className="text-xs text-muted-foreground">N/A</span>
                     )}
@@ -118,7 +112,7 @@ export function TransactionList({
                     {t.pnl !== undefined ? (
                       <span>
                         {t.pnl > 0 ? "+" : ""}
-                        {formatCurrency(t.pnl)}
+                        {formatCurrency(t.pnl, t.currency)}
                       </span>
                     ) : (
                       "-"

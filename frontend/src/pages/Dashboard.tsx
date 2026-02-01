@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/templates/DashboardLayout";
 import { TransactionList } from "@/components/organisms/TransactionList";
+import { PortfolioSummary } from "@/components/organisms/PortfolioSummary";
 import { type Transaction } from "@/types";
-import { toast } from "sonner"; // <--- Import directly
+import { toast } from "sonner";
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [dollarRate, setDollarRate] = useState(5.5);
 
   const fetchTransactions = () => {
     setLoading(true);
@@ -23,7 +25,6 @@ export default function DashboardPage() {
   const handleSyncPrices = async () => {
     setSyncing(true);
 
-    // 1. Show Loading Toast
     const toastId = toast.loading("Syncing prices...", {
       description: "Fetching latest data from Twelvedata.",
     });
@@ -35,13 +36,11 @@ export default function DashboardPage() {
 
       if (res.ok) {
         fetchTransactions();
-        // 2. Update Toast to Success
         toast.success("Prices Updated", {
-          id: toastId, // Replaces the loading toast
+          id: toastId,
           description: "Your portfolio values are now up to date.",
         });
       } else {
-        // 3. Update Toast to Error
         toast.error("Update Failed", {
           id: toastId,
           description: "Could not update prices. Try again later.",
@@ -88,9 +87,14 @@ export default function DashboardPage() {
     <DashboardLayout
       onRefresh={fetchTransactions}
       isLoading={loading}
-      onSyncPrices={handleSyncPrices} // Pass logic
+      onSyncPrices={handleSyncPrices}
       isSyncing={syncing}
     >
+      <PortfolioSummary
+        transactions={transactions}
+        dollarRate={dollarRate}
+        onDollarRateChange={setDollarRate}
+      />
       <TransactionList
         transactions={transactions}
         isLoading={loading}

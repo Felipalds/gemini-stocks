@@ -19,10 +19,11 @@ type Transaction struct {
 	ID       string          `gorm:"primaryKey" json:"ID"`
 	Symbol   string          `json:"symbol" gorm:"index"`
 	Type     TransactionType `json:"type"`
-	Quantity int             `json:"quantity"`
+	Quantity float32         `json:"quantity"`
 	Price    float64         `json:"price"`
+	Currency string          `json:"currency" gorm:"default:USD"`
 	Date     time.Time       `json:"date"`
-	Note     string          `json:"note"` // Added field for custom user notes
+	Note     string          `json:"note"`
 }
 
 func (t *Transaction) BeforeCreate(tx *gorm.DB) (err error) {

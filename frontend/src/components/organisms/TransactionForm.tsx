@@ -29,8 +29,9 @@ const formSchema = z.object({
     .min(2, "Symbol must be at least 2 characters")
     .toUpperCase(),
   type: z.enum(["BUY", "SELL"]),
-  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
+  quantity: z.coerce.number(),
   price: z.coerce.number().min(0.01, "Price must be positive"),
+  currency: z.enum(["USD", "BRL"]),
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date"),
   note: z.string().optional(),
 });
@@ -46,6 +47,7 @@ export function TransactionForm() {
       type: "BUY",
       quantity: 1,
       price: 0,
+      currency: "USD",
       note: "",
       date: new Date().toISOString().split("T")[0], // Today YYYY-MM-DD
     },
@@ -158,6 +160,32 @@ export function TransactionForm() {
               />
             </div>
 
+            {/* Currency */}
+            <FormField
+              control={form.control}
+              name="currency"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Currency</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select currency" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="USD">USD ($)</SelectItem>
+                      <SelectItem value="BRL">BRL (R$)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Date */}
             <FormField
               control={form.control}
@@ -194,12 +222,14 @@ export function TransactionForm() {
             <div className="flex justify-end gap-4 pt-4">
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={() => navigate("/")}
               >
                 Cancel
               </Button>
-              <Button type="submit">Save Transaction</Button>
+              <Button variant={"outline"} type="submit">
+                Save Transaction
+              </Button>
             </div>
           </form>
         </Form>

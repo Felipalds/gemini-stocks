@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom"; // <--- Add this import
 import { Button } from "@/components/ui/button";
-import { RefreshCcw, Plus, CloudDownload } from "lucide-react";
+import { RefreshCcw, Plus, CloudDownload, Briefcase } from "lucide-react";
+import { ModeToggle } from "@/components/ui/mode-toggle";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -37,7 +38,7 @@ export function DashboardLayout({
             {/* SYNC PRICES BUTTON */}
             <Button
               onClick={onSyncPrices}
-              variant="secondary"
+              variant="outline"
               disabled={isSyncing || isLoading}
             >
               <CloudDownload
@@ -59,11 +60,20 @@ export function DashboardLayout({
             </Button>
 
             <Link to="/add">
-              <Button>
+              <Button variant={"outline"}>
                 <Plus className="mr-2 h-4 w-4" />
                 New Transaction
               </Button>
             </Link>
+
+            <Link to="/portfolio">
+              <Button variant={"outline"}>
+                <Briefcase className="mr-2 h-4 w-4" />
+                See Portfolio
+              </Button>
+            </Link>
+
+            <ModeToggle />
           </div>
         </header>
 
