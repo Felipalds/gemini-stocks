@@ -1,0 +1,74 @@
+import { ReactNode } from "react";
+import { Link } from "react-router-dom"; // <--- Add this import
+import { Button } from "@/components/ui/button";
+import { RefreshCcw, Plus, CloudDownload } from "lucide-react";
+
+interface DashboardLayoutProps {
+  children: ReactNode;
+  onRefresh: () => void;
+  isLoading: boolean;
+  onSyncPrices: () => void; // <--- New Prop
+  isSyncing: boolean; // <--- New Prop
+}
+
+export function DashboardLayout({
+  children,
+  onRefresh,
+  isLoading,
+  onSyncPrices,
+  isSyncing,
+}: DashboardLayoutProps) {
+  return (
+    <div className="min-h-screen bg-muted/40 p-8 font-sans">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <header className="flex items-center justify-between">
+          <div>
+            <Link to="/">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground hover:opacity-80 transition-opacity">
+                Gemini Stocks
+              </h1>
+            </Link>
+            <p className="text-muted-foreground mt-1">
+              Manage your stock portfolio privately.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            {/* SYNC PRICES BUTTON */}
+            <Button
+              onClick={onSyncPrices}
+              variant="secondary"
+              disabled={isSyncing || isLoading}
+            >
+              <CloudDownload
+                className={`mr-2 h-4 w-4 ${isSyncing ? "animate-bounce" : ""}`}
+              />
+              {isSyncing ? "Syncing..." : "Update Prices"}
+            </Button>
+
+            {/* REFRESH LIST BUTTON */}
+            <Button
+              onClick={onRefresh}
+              variant="outline"
+              disabled={isLoading || isSyncing}
+            >
+              <RefreshCcw
+                className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh Data
+            </Button>
+
+            <Link to="/add">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New Transaction
+              </Button>
+            </Link>
+          </div>
+        </header>
+
+        <main>{children}</main>
+      </div>
+    </div>
+  );
+}
