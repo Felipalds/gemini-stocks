@@ -145,7 +145,7 @@ func (h *TransactionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		if currentPrice > 0 {
 			marketValue = currentPrice * float64(t.Quantity)
 			costBasis := t.Price * float64(t.Quantity)
-			pnl = marketValue - costBasis
+			pnl = marketValue - costBasis - t.Fee
 
 			if costBasis > 0 {
 				pnlPercent = (pnl / costBasis) * 100
@@ -164,6 +164,51 @@ func (h *TransactionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	// 5. Return JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// Update handles PUT /transactions/{id}
+func (h *TransactionHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// 1. Find existing transaction
+	var existing models.Transaction
+	if err := h.DB.First(&existing, "id = ?", id).Error; err != nil {
+		http.Error(w, "Transaction not found", http.StatusNotFound)
+		return
+	}
+
+	// 2. Decode request body
+	var body models.Transaction
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.Logger.Error("Failed to decode JSON body", zap.Error(err))
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Update fields
+	existing.Symbol = body.Symbol
+	existing.Type = body.Type
+	existing.Quantity = body.Quantity
+	existing.Price = body.Price
+	existing.Fee = body.Fee
+	existing.Currency = body.Currency
+	existing.Date = body.Date
+	existing.Note = body.Note
+
+	if existing.Currency == "" {
+		existing.Currency = "USD"
+	}
+
+	// 4. Save
+	if err := h.DB.Save(&existing).Error; err != nil {
+		h.Logger.Error("Failed to update transaction", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	h.Logger.Infof("Transaction %s updated successfully", id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(existing)
 }
 
 // Delete handles DELETE /transactions/{id}

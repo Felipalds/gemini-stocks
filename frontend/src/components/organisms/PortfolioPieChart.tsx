@@ -16,6 +16,7 @@ export interface PieSlice {
 
 interface PortfolioPieChartProps {
   data: PieSlice[];
+  title?: string;
   className?: string;
 }
 
@@ -63,9 +64,10 @@ interface LegendEntry {
 
 function CustomLegend({ payload }: { payload?: LegendEntry[] }) {
   if (!payload?.length) return null;
+  const top3 = payload.slice(0, 3);
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 justify-center text-xs">
-      {payload.map((entry) => (
+      {top3.map((entry) => (
         <li key={entry.value} className="flex items-center gap-1.5">
           <span
             className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
@@ -78,8 +80,16 @@ function CustomLegend({ payload }: { payload?: LegendEntry[] }) {
   );
 }
 
-export function PortfolioPieChart({ data, className }: PortfolioPieChartProps) {
-  const filtered = useMemo(() => data.filter((d) => d.value > 0), [data]);
+export function PortfolioPieChart({
+  data,
+  title,
+  className,
+}: PortfolioPieChartProps) {
+  const filtered = useMemo(
+    () =>
+      [...data].filter((d) => d.value > 0).sort((a, b) => b.value - a.value),
+    [data],
+  );
 
   if (filtered.length === 0) {
     return (
@@ -92,28 +102,35 @@ export function PortfolioPieChart({ data, className }: PortfolioPieChartProps) {
   }
 
   return (
-    <div className={className}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={filtered}
-            cx="50%"
-            cy="50%"
-            innerRadius="40%"
-            outerRadius="80%"
-            paddingAngle={2}
-            dataKey="value"
-            nameKey="name"
-            stroke="none"
-          >
-            {filtered.map((_entry, index) => (
-              <Cell key={index} fill={getColor(index)} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-          <Legend content={<CustomLegend />} verticalAlign="bottom" />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className={`flex flex-col ${className ?? ""}`}>
+      {title && (
+        <p className="text-xs font-medium text-muted-foreground text-center">
+          {title}
+        </p>
+      )}
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={filtered}
+              cx="50%"
+              cy="50%"
+              innerRadius="40%"
+              outerRadius="80%"
+              paddingAngle={2}
+              dataKey="value"
+              nameKey="name"
+              stroke="none"
+            >
+              {filtered.map((_entry, index) => (
+                <Cell key={index} fill={getColor(index)} />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip />} />
+            <Legend content={<CustomLegend />} verticalAlign="bottom" />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

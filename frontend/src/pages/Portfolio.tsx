@@ -88,6 +88,7 @@ export default function PortfolioPage() {
         buyQuantity: number;
         sellQuantity: number;
         totalBuyCost: number;
+        totalFees: number;
         currentPrice: number;
       }
     >();
@@ -97,6 +98,7 @@ export default function PortfolioPage() {
         buyQuantity: 0,
         sellQuantity: 0,
         totalBuyCost: 0,
+        totalFees: 0,
         currentPrice: 0,
       };
 
@@ -106,6 +108,8 @@ export default function PortfolioPage() {
       } else {
         entry.sellQuantity += t.quantity;
       }
+
+      entry.totalFees += t.fee || 0;
 
       if (t.current_price) {
         entry.currentPrice = t.current_price;
@@ -121,7 +125,7 @@ export default function PortfolioPage() {
         data.buyQuantity > 0 ? data.totalBuyCost / data.buyQuantity : 0;
       const totalValue = netQuantity * data.currentPrice;
       const totalCostBasis = netQuantity * avgBuyPrice;
-      const pnl = totalValue - totalCostBasis;
+      const pnl = totalValue - totalCostBasis - data.totalFees;
       const pnlPercent =
         totalCostBasis !== 0 ? (pnl / totalCostBasis) * 100 : 0;
 

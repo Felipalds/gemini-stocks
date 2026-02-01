@@ -79,6 +79,7 @@ func main() {
 	r.Route("/transactions", func(r chi.Router) {
 		r.Post("/", transactionHandler.Create)
 		r.Get("/", transactionHandler.GetAll)
+		r.Put("/{id}", transactionHandler.Update)
 		r.Delete("/{id}", transactionHandler.Delete)
 	})
 

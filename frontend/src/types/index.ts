@@ -5,6 +5,7 @@ export interface Transaction {
   quantity: number;
   price: number; // This is your PURCHASE price
   currency: string;
+  fee: number;
   note: string;
   date: string;
 

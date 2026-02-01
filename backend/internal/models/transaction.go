@@ -22,6 +22,7 @@ type Transaction struct {
 	Quantity float32         `json:"quantity"`
 	Price    float64         `json:"price"`
 	Currency string          `json:"currency" gorm:"default:USD"`
+	Fee      float64         `json:"fee" gorm:"default:0"`
 	Date     time.Time       `json:"date"`
 	Note     string          `json:"note"`
 }

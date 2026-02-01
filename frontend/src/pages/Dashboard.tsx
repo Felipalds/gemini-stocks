@@ -1,26 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { DashboardLayout } from "@/components/templates/DashboardLayout";
 import { TransactionList } from "@/components/organisms/TransactionList";
-import { PortfolioSummary } from "@/components/organisms/PortfolioSummary";
+import {
+  PortfolioSummary,
+  type StockPriceInfo,
+} from "@/components/organisms/PortfolioSummary";
 import { type Transaction } from "@/types";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [stockPrices, setStockPrices] = useState<StockPriceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [dollarRate, setDollarRate] = useState(5.5);
 
-  const fetchTransactions = () => {
+  const fetchData = useCallback(() => {
     setLoading(true);
-    fetch("http://localhost:8080/transactions")
-      .then((res) => res.json())
-      .then((data) => {
-        setTransactions(data || []);
+    Promise.all([
+      fetch("http://localhost:8080/transactions").then((r) => r.json()),
+      fetch("http://localhost:8080/prices").then((r) => r.json()),
+    ])
+      .then(([txData, priceData]) => {
+        setTransactions(txData || []);
+        setStockPrices(priceData || []);
       })
       .catch((err) => console.error("Error fetching:", err))
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   const handleSyncPrices = async () => {
     setSyncing(true);
@@ -35,7 +42,7 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
-        fetchTransactions();
+        fetchData();
         toast.success("Prices Updated", {
           id: toastId,
           description: "Your portfolio values are now up to date.",
@@ -69,7 +76,7 @@ export default function DashboardPage() {
 
       if (res.ok) {
         toast.success("Transaction deleted", { id: toastId });
-        fetchTransactions(); // Refresh the list
+        fetchData(); // Refresh the list
       } else {
         toast.error("Failed to delete", { id: toastId });
       }
@@ -80,18 +87,19 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchTransactions();
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
   return (
     <DashboardLayout
-      onRefresh={fetchTransactions}
+      onRefresh={fetchData}
       isLoading={loading}
       onSyncPrices={handleSyncPrices}
       isSyncing={syncing}
     >
       <PortfolioSummary
         transactions={transactions}
+        stockPrices={stockPrices}
         dollarRate={dollarRate}
         onDollarRateChange={setDollarRate}
       />
@@ -99,6 +107,7 @@ export default function DashboardPage() {
         transactions={transactions}
         isLoading={loading}
         onDelete={handleDelete}
+        onEdited={fetchData}
       />
     </DashboardLayout>
   );
