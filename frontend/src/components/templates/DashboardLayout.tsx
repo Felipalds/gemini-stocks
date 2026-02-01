@@ -1,15 +1,22 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom"; // <--- Add this import
 import { Button } from "@/components/ui/button";
-import { RefreshCcw, Plus, CloudDownload, Briefcase } from "lucide-react";
+import {
+  RefreshCcw,
+  Plus,
+  CloudDownload,
+  Briefcase,
+  FileSpreadsheet,
+} from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 
 interface DashboardLayoutProps {
   children: ReactNode;
   onRefresh: () => void;
   isLoading: boolean;
-  onSyncPrices: () => void; // <--- New Prop
-  isSyncing: boolean; // <--- New Prop
+  onSyncPrices?: () => void;
+  isSyncing?: boolean;
+  onImportExcel?: () => void;
 }
 
 export function DashboardLayout({
@@ -18,6 +25,7 @@ export function DashboardLayout({
   isLoading,
   onSyncPrices,
   isSyncing,
+  onImportExcel,
 }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/40 p-8 font-sans">
@@ -65,6 +73,13 @@ export function DashboardLayout({
                 New Transaction
               </Button>
             </Link>
+
+            {onImportExcel && (
+              <Button variant="outline" onClick={onImportExcel}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Import Excel
+              </Button>
+            )}
 
             <Link to="/portfolio">
               <Button variant={"outline"}>

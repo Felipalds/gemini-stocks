@@ -5,6 +5,7 @@ import {
   PortfolioSummary,
   type StockPriceInfo,
 } from "@/components/organisms/PortfolioSummary";
+import { ImportExcelDialog } from "@/components/organisms/ImportExcelDialog";
 import { type Transaction } from "@/types";
 import { toast } from "sonner";
 
@@ -14,6 +15,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [dollarRate, setDollarRate] = useState(5.5);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -96,6 +98,7 @@ export default function DashboardPage() {
       isLoading={loading}
       onSyncPrices={handleSyncPrices}
       isSyncing={syncing}
+      onImportExcel={() => setImportDialogOpen(true)}
     >
       <PortfolioSummary
         transactions={transactions}
@@ -108,6 +111,11 @@ export default function DashboardPage() {
         isLoading={loading}
         onDelete={handleDelete}
         onEdited={fetchData}
+      />
+      <ImportExcelDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onImported={fetchData}
       />
     </DashboardLayout>
   );

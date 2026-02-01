@@ -2,14 +2,30 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Felipalds/gemini-stocks/internal/models"
 	"github.com/Felipalds/gemini-stocks/internal/services"
 	"github.com/go-chi/chi/v5"
+	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+type ImportRowError struct {
+	Row     int    `json:"row"`
+	Message string `json:"message"`
+}
+
+type ImportResult struct {
+	Imported int              `json:"imported"`
+	Failed   int              `json:"failed"`
+	Errors   []ImportRowError `json:"errors"`
+}
 
 // TransactionHandler holds dependencies for transaction logic
 type TransactionHandler struct {
@@ -35,6 +51,29 @@ func NewTransactionHandler(db *gorm.DB, logger *zap.SugaredLogger, financeServic
 	}
 }
 
+// ensureStockExists checks if a ticker exists in stock_prices; if not, creates it and fetches the price.
+func (h *TransactionHandler) ensureStockExists(symbol, currency string) {
+	var stock models.StockPrice
+	if err := h.DB.First(&stock, "symbol = ?", symbol).Error; err != nil {
+		h.Logger.Infof("New stock symbol detected: %s. Fetching initial price...", symbol)
+
+		currentPrice, err := h.Finance.GetPriceFromAPI(symbol)
+		if err != nil {
+			h.Logger.Warn("Could not fetch initial price from API", zap.Error(err))
+			currentPrice = 0
+		}
+
+		newStock := models.StockPrice{
+			Symbol:   symbol,
+			Price:    currentPrice,
+			Currency: currency,
+		}
+		if err := h.DB.Create(&newStock).Error; err != nil {
+			h.Logger.Error("Failed to save new stock ticker", zap.Error(err))
+		}
+	}
+}
+
 // Create handles POST /transactions
 func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var tx models.Transaction
@@ -57,33 +96,8 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		tx.Currency = "USD"
 	}
 
-	// --- NEW LOGIC START ---
 	// 3. Ensure the Stock Ticker exists in our Price Cache table
-	var stock models.StockPrice
-	// Check if we already have this symbol
-	if err := h.DB.First(&stock, "symbol = ?", tx.Symbol).Error; err != nil {
-		// If NOT found (error is not nil), we need to create it
-		h.Logger.Infof("New stock symbol detected: %s. Fetching initial price...", tx.Symbol)
-
-		// A. Fetch real-time price immediately
-		currentPrice, err := h.Finance.GetPriceFromAPI(tx.Symbol)
-		if err != nil {
-			h.Logger.Warn("Could not fetch initial price from API", zap.Error(err))
-			currentPrice = 0 // Save as 0 so the background worker can try again later
-		}
-
-		// B. Save to stock_prices table
-		newStock := models.StockPrice{
-			Symbol:   tx.Symbol,
-			Price:    currentPrice,
-			Currency: tx.Currency,
-		}
-		if err := h.DB.Create(&newStock).Error; err != nil {
-			h.Logger.Error("Failed to save new stock ticker", zap.Error(err))
-			// We continue anyway, so we don't block the transaction
-		}
-	}
-	// --- NEW LOGIC END ---
+	h.ensureStockExists(tx.Symbol, tx.Currency)
 
 	// 4. Save Transaction to Database
 	if err := h.DB.Create(&tx).Error; err != nil {
@@ -209,6 +223,145 @@ func (h *TransactionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	h.Logger.Infof("Transaction %s updated successfully", id)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(existing)
+}
+
+// ImportExcel handles POST /transactions/import
+func (h *TransactionHandler) ImportExcel(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse multipart form (10MB limit)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "File too large or invalid form", http.StatusBadRequest)
+		return
+	}
+
+	symbol := strings.TrimSpace(strings.ToUpper(r.FormValue("symbol")))
+	currency := strings.TrimSpace(strings.ToUpper(r.FormValue("currency")))
+
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+	if currency == "" {
+		currency = "USD"
+	}
+
+	// 2. Get the uploaded file
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "File is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// 3. Open with excelize
+	f, err := excelize.OpenReader(file)
+	if err != nil {
+		http.Error(w, "Invalid Excel file", http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+
+	// 4. Ensure ticker exists (reuse shared logic)
+	h.ensureStockExists(symbol, currency)
+
+	// 5. Read rows from the first sheet
+	sheetName := f.GetSheetName(0)
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		http.Error(w, "Could not read spreadsheet", http.StatusBadRequest)
+		return
+	}
+
+	result := ImportResult{}
+
+	for i, row := range rows {
+		// Skip header row
+		if i == 0 {
+			continue
+		}
+		rowNum := i + 1 // 1-based for user-friendly error messages
+
+		if len(row) < 4 {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: fmt.Sprintf("Expected 4 columns (Date, Quantity, Price, Fee), got %d", len(row)),
+			})
+			continue
+		}
+
+		// Parse Date (YYYY-MM-DD)
+		date, err := time.Parse("2006-01-02", strings.TrimSpace(row[0]))
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: fmt.Sprintf("Invalid date '%s'. Expected format: YYYY-MM-DD", row[0]),
+			})
+			continue
+		}
+
+		// Parse Quantity (float)
+		quantity, err := strconv.ParseFloat(strings.TrimSpace(row[1]), 32)
+		if err != nil || quantity <= 0 {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: fmt.Sprintf("Invalid quantity '%s'. Must be a positive number", row[1]),
+			})
+			continue
+		}
+
+		// Parse Price (float)
+		price, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+		if err != nil || price <= 0 {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: fmt.Sprintf("Invalid price '%s'. Must be a positive number", row[2]),
+			})
+			continue
+		}
+
+		// Parse Fee (float)
+		fee, err := strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
+		if err != nil || fee < 0 {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: fmt.Sprintf("Invalid fee '%s'. Must be a non-negative number", row[3]),
+			})
+			continue
+		}
+
+		tx := models.Transaction{
+			Symbol:   symbol,
+			Type:     models.Buy,
+			Quantity: float32(quantity),
+			Price:    price,
+			Fee:      fee,
+			Currency: currency,
+			Date:     date,
+		}
+
+		if err := h.DB.Create(&tx).Error; err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportRowError{
+				Row:     rowNum,
+				Message: "Database error saving transaction",
+			})
+			continue
+		}
+
+		result.Imported++
+	}
+
+	h.Logger.Infof("Excel import for %s: %d imported, %d failed", symbol, result.Imported, result.Failed)
+
+	w.Header().Set("Content-Type", "application/json")
+	if result.Imported == 0 && result.Failed > 0 {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	json.NewEncoder(w).Encode(result)
 }
 
 // Delete handles DELETE /transactions/{id}
