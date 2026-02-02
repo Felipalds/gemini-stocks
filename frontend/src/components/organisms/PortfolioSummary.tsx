@@ -10,6 +10,7 @@ import {
   PortfolioPieChart,
   type PieSlice,
 } from "@/components/organisms/PortfolioPieChart";
+import { PieChartDialog } from "@/components/organisms/PieChartDialog";
 
 interface PortfolioSummaryProps {
   transactions: Transaction[];
@@ -29,6 +30,8 @@ export function PortfolioSummary({
   hideValues,
 }: PortfolioSummaryProps) {
   const [rateInput, setRateInput] = useState(String(dollarRate));
+  const [assetDialogOpen, setAssetDialogOpen] = useState(false);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 
   const {
     totalUSD,
@@ -190,7 +193,7 @@ export function PortfolioSummary({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="cursor-pointer hover:shadow-lg transition-shadow">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">
             Portfolio Distribution
@@ -201,11 +204,12 @@ export function PortfolioSummary({
             data={assetSlices}
             title="By Asset"
             className="h-[200px]"
+            onClick={() => setAssetDialogOpen(true)}
           />
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="cursor-pointer hover:shadow-lg transition-shadow">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">
             Portfolio Distribution
@@ -216,9 +220,24 @@ export function PortfolioSummary({
             data={categorySlices}
             title="By Category"
             className="h-[200px]"
+            onClick={() => setCategoryDialogOpen(true)}
           />
         </CardContent>
       </Card>
+
+      <PieChartDialog
+        open={assetDialogOpen}
+        onOpenChange={setAssetDialogOpen}
+        title="Portfolio by Asset"
+        data={assetSlices}
+      />
+
+      <PieChartDialog
+        open={categoryDialogOpen}
+        onOpenChange={setCategoryDialogOpen}
+        title="Portfolio by Category"
+        data={categorySlices}
+      />
     </div>
   );
 }

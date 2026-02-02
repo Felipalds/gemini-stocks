@@ -45,7 +45,7 @@ export function DashboardLayout({
           <div>
             <Link to="/">
               <h1 className="text-3xl font-bold tracking-tight text-foreground hover:opacity-80 transition-opacity">
-                Gemini Stocks
+                Gemini Finance
               </h1>
             </Link>
             <p className="text-muted-foreground mt-1">

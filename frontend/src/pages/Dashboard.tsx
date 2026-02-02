@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/templates/DashboardLayout";
 import { TransactionList } from "@/components/organisms/TransactionList";
 import { PortfolioSummary } from "@/components/organisms/PortfolioSummary";
@@ -7,7 +7,6 @@ import { GoalDialog } from "@/components/organisms/GoalDialog";
 import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDialog";
 import { TickerCard, type TickerData } from "@/components/organisms/TickerCard";
 import { useApp } from "@/contexts/AppContext";
-import { squarify } from "@/lib/treemap";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -28,26 +27,6 @@ export default function DashboardPage() {
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
   const [allTransactionsDialogOpen, setAllTransactionsDialogOpen] =
     useState(false);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerSize({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
-      }
-    });
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   // Portfolio treemap logic (from Portfolio.tsx)
   const tickers: TickerData[] = useMemo(() => {
@@ -135,23 +114,10 @@ export default function DashboardPage() {
     return tickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
   }, [tickers]);
 
-  const treemapRects = useMemo(() => {
-    if (containerSize.width === 0 || containerSize.height === 0) return [];
-    const items = tickers.map((t) => ({
-      id: t.symbol,
-      value: Math.abs(t.totalValue),
-    }));
-    return squarify(items, containerSize.width, containerSize.height);
-  }, [tickers, containerSize]);
-
-  const tickerMap = useMemo(() => {
-    const m = new Map<string, TickerData>();
-    for (const t of tickers) m.set(t.symbol, t);
-    return m;
-  }, [tickers]);
-
   const recentTransactions = useMemo(() => {
-    return transactions.slice(0, 5);
+    return [...transactions]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5);
   }, [transactions]);
 
   const handleDelete = async (id: string) => {
@@ -197,47 +163,27 @@ export default function DashboardPage() {
         hideValues={hideValues}
       />
 
-      {/* Treemap Portfolio */}
+      {/* Portfolio Grid */}
       {tickers.length === 0 && !loading ? (
         <div className="text-center py-10 text-muted-foreground">
           No holdings found. Add some transactions first!
         </div>
       ) : (
-        <div
-          ref={containerRef}
-          className="relative w-full mt-6"
-          style={{ height: "500px" }}
-        >
-          {treemapRects.map((rect) => {
-            const ticker = tickerMap.get(rect.id);
-            if (!ticker) return null;
-            return (
-              <div
-                key={rect.id}
-                className="absolute p-1"
-                style={{
-                  left: rect.x,
-                  top: rect.y,
-                  width: rect.width,
-                  height: rect.height,
-                }}
-              >
-                <TickerCard
-                  ticker={ticker}
-                  onEdited={refreshData}
-                  hideValues={hideValues}
-                  compact={rect.width < 250 || rect.height < 200}
-                  portfolioPercent={
-                    totalPortfolioValue > 0
-                      ? (Math.abs(ticker.totalValue) / totalPortfolioValue) *
-                        100
-                      : 0
-                  }
-                  className="h-full"
-                />
-              </div>
-            );
-          })}
+        <div className="mt-6 grid grid-cols-4 gap-4">
+          {tickers.map((ticker) => (
+            <TickerCard
+              key={ticker.symbol}
+              ticker={ticker}
+              onEdited={refreshData}
+              hideValues={hideValues}
+              portfolioPercent={
+                totalPortfolioValue > 0
+                  ? (Math.abs(ticker.totalValue) / totalPortfolioValue) * 100
+                  : 0
+              }
+              className="col-span-1"
+            />
+          ))}
         </div>
       )}
 

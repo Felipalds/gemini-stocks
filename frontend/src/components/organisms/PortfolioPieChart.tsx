@@ -18,6 +18,7 @@ interface PortfolioPieChartProps {
   data: PieSlice[];
   title?: string;
   className?: string;
+  onClick?: () => void;
 }
 
 const COLORS = [
@@ -26,6 +27,16 @@ const COLORS = [
   "var(--color-chart-3)",
   "var(--color-chart-4)",
   "var(--color-chart-5)",
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#f59e0b", // amber
+  "#10b981", // emerald
+  "#06b6d4", // cyan
+  "#6366f1", // indigo
+  "#f97316", // orange
+  "#14b8a6", // teal
+  "#a855f7", // purple
+  "#84cc16", // lime
 ];
 
 function getColor(index: number) {
@@ -62,12 +73,23 @@ interface LegendEntry {
   color: string;
 }
 
-function CustomLegend({ payload }: { payload?: LegendEntry[] }) {
-  if (!payload?.length) return null;
-  const top3 = payload.slice(0, 3);
+interface CustomLegendProps {
+  payload?: LegendEntry[];
+  filteredData: PieSlice[];
+}
+
+function CustomLegend({ payload, filteredData }: CustomLegendProps) {
+  if (!payload?.length || !filteredData.length) return null;
+
+  // Get top 3 by value from filtered data (already sorted)
+  const top3Names = filteredData.slice(0, 3).map((d) => d.name);
+  const top3Entries = payload.filter((entry) =>
+    top3Names.includes(entry.value),
+  );
+
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 justify-center text-xs">
-      {top3.map((entry) => (
+      {top3Entries.map((entry) => (
         <li key={entry.value} className="flex items-center gap-1.5">
           <span
             className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
@@ -84,6 +106,7 @@ export function PortfolioPieChart({
   data,
   title,
   className,
+  onClick,
 }: PortfolioPieChartProps) {
   const filtered = useMemo(
     () =>
@@ -102,7 +125,10 @@ export function PortfolioPieChart({
   }
 
   return (
-    <div className={`flex flex-col ${className ?? ""}`}>
+    <div
+      className={`flex flex-col ${onClick ? "cursor-pointer" : ""} ${className ?? ""}`}
+      onClick={onClick}
+    >
       {title && (
         <p className="text-xs font-medium text-muted-foreground text-center">
           {title}
@@ -127,7 +153,12 @@ export function PortfolioPieChart({
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
-            <Legend content={<CustomLegend />} verticalAlign="bottom" />
+            <Legend
+              content={(props) => (
+                <CustomLegend {...props} filteredData={filtered} />
+              )}
+              verticalAlign="bottom"
+            />
           </PieChart>
         </ResponsiveContainer>
       </div>
