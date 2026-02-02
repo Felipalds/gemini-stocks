@@ -57,7 +57,7 @@ func (h *TransactionHandler) ensureStockExists(symbol, currency string) {
 	if err := h.DB.First(&stock, "symbol = ?", symbol).Error; err != nil {
 		h.Logger.Infof("New stock symbol detected: %s. Fetching initial price...", symbol)
 
-		currentPrice, err := h.Finance.GetPriceFromAPI(symbol)
+		currentPrice, err := h.Finance.GetPriceFromAPI(symbol, currency)
 		if err != nil {
 			h.Logger.Warn("Could not fetch initial price from API", zap.Error(err))
 			currentPrice = 0

@@ -4,20 +4,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DollarSign } from "lucide-react";
 import { type Transaction } from "@/types";
+import { type StockPriceInfo } from "@/contexts/AppContext";
 import { formatCurrency } from "@/lib/format";
 import {
   PortfolioPieChart,
   type PieSlice,
 } from "@/components/organisms/PortfolioPieChart";
-
-export interface StockPriceInfo {
-  symbol: string;
-  price: number;
-  tags: string;
-  category: string;
-  currency: string;
-  updated_at: string;
-}
 
 interface PortfolioSummaryProps {
   transactions: Transaction[];

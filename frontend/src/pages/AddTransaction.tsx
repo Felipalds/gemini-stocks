@@ -5,9 +5,11 @@ import {
   type TransactionFormValues,
 } from "@/components/organisms/TransactionForm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useApp } from "@/contexts/AppContext";
 
 export default function AddTransactionPage() {
   const navigate = useNavigate();
+  const { refreshData, loading, hideValues, toggleHideValues } = useApp();
 
   function onSubmit(values: TransactionFormValues) {
     const payload = {
@@ -22,6 +24,7 @@ export default function AddTransactionPage() {
     })
       .then((res) => {
         if (res.ok) {
+          refreshData();
           navigate("/");
         } else {
           console.error("Failed to save");
@@ -32,7 +35,12 @@ export default function AddTransactionPage() {
   }
 
   return (
-    <DashboardLayout onRefresh={() => {}} isLoading={false}>
+    <DashboardLayout
+      onRefresh={refreshData}
+      isLoading={loading}
+      hideValues={hideValues}
+      onToggleHideValues={toggleHideValues}
+    >
       <div className="py-10">
         <Card className="max-w-xl mx-auto">
           <CardHeader>

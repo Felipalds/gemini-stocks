@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 )
@@ -18,24 +19,41 @@ type FinanceService struct {
 func NewFinanceService(logger *zap.SugaredLogger) *FinanceService {
 	return &FinanceService{
 		Logger: logger,
-		ApiKey: os.Getenv("TWELVEDATA_API_KEY"),
+		ApiKey: os.Getenv("ALPHA_API_KEY"),
 	}
 }
 
-type priceResponse struct {
-	Price string `json:"price"`
+type globalQuoteResponse struct {
+	GlobalQuote struct {
+		Price string `json:"05. price"`
+	} `json:"Global Quote"`
 }
 
-// GetPriceFromAPI fetches the real-time price from Twelvedata
-func (s *FinanceService) GetPriceFromAPI(symbol string) (float64, error) {
-	fmt.Println(s.ApiKey)
+// buildAlphaSymbol converts our internal symbol to the Alpha Vantage query symbol.
+// BRL stocks get .SAO appended. Symbols with "/" (e.g. BTC/USD) become BTCUSD.
+func buildAlphaSymbol(symbol string, currency string) string {
+	// Remove slash for crypto pairs like BTC/USD -> BTCUSD
+	alphaSymbol := strings.ReplaceAll(symbol, "/", "")
+
+	// Brazilian stocks need .SAO suffix
+	if currency == "BRL" && !strings.HasSuffix(alphaSymbol, ".SAO") {
+		alphaSymbol = alphaSymbol + ".SAO"
+	}
+
+	return alphaSymbol
+}
+
+// GetPriceFromAPI fetches the real-time price from Alpha Vantage
+func (s *FinanceService) GetPriceFromAPI(symbol string, currency string) (float64, error) {
 	if s.ApiKey == "" {
 		return 0, fmt.Errorf("API key is missing")
 	}
 
-	fmt.Print(symbol)
+	alphaSymbol := buildAlphaSymbol(symbol, currency)
 
-	url := fmt.Sprintf("https://api.twelvedata.com/price?symbol=%s&apikey=%s", symbol, s.ApiKey)
+	url := fmt.Sprintf("https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=%s&apikey=%s", alphaSymbol, s.ApiKey)
+	s.Logger.Infof("Fetching price for %s (query: %s)", symbol, alphaSymbol)
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return 0, err
@@ -46,17 +64,20 @@ func (s *FinanceService) GetPriceFromAPI(symbol string) (float64, error) {
 		return 0, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
-	var data priceResponse
+	var data globalQuoteResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return 0, err
 	}
 
-	price, err := strconv.ParseFloat(data.Price, 64)
+	if data.GlobalQuote.Price == "" {
+		return 0, fmt.Errorf("no price data returned for %s", alphaSymbol)
+	}
+
+	price, err := strconv.ParseFloat(data.GlobalQuote.Price, 64)
 	if err != nil {
 		return 0, err
 	}
 
-	s.Logger.Info("Prices updated?")
-
+	s.Logger.Infof("Price for %s: %.2f", symbol, price)
 	return price, nil
 }

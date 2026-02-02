@@ -43,7 +43,7 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	updatedCount := 0
 	for _, stock := range stocks {
 		// Call your existing finance service
-		newPrice, err := h.Finance.GetPriceFromAPI(stock.Symbol)
+		newPrice, err := h.Finance.GetPriceFromAPI(stock.Symbol, stock.Currency)
 		if err != nil {
 			h.Logger.Warnf("Failed to update %s: %v", stock.Symbol, err)
 			continue

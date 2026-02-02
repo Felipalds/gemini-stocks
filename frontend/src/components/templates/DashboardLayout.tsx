@@ -5,10 +5,11 @@ import {
   RefreshCcw,
   Plus,
   CloudDownload,
-  Briefcase,
   FileSpreadsheet,
   Eye,
   EyeOff,
+  Target,
+  List,
 } from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 
@@ -19,6 +20,8 @@ interface DashboardLayoutProps {
   onSyncPrices?: () => void;
   isSyncing?: boolean;
   onImportExcel?: () => void;
+  onGoal?: () => void;
+  onAllTransactions?: () => void;
   hideValues?: boolean;
   onToggleHideValues?: () => void;
 }
@@ -30,12 +33,14 @@ export function DashboardLayout({
   onSyncPrices,
   isSyncing,
   onImportExcel,
+  onGoal,
+  onAllTransactions,
   hideValues,
   onToggleHideValues,
 }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/40 p-8 font-sans">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <div>
             <Link to="/">
@@ -80,6 +85,13 @@ export function DashboardLayout({
               </Button>
             </Link>
 
+            {onAllTransactions && (
+              <Button variant="outline" onClick={onAllTransactions}>
+                <List className="mr-2 h-4 w-4" />
+                All Transactions
+              </Button>
+            )}
+
             {onImportExcel && (
               <Button variant="outline" onClick={onImportExcel}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
@@ -87,12 +99,12 @@ export function DashboardLayout({
               </Button>
             )}
 
-            <Link to="/portfolio">
-              <Button variant={"outline"}>
-                <Briefcase className="mr-2 h-4 w-4" />
-                See Portfolio
+            {onGoal && (
+              <Button variant="outline" onClick={onGoal}>
+                <Target className="mr-2 h-4 w-4" />
+                Goal
               </Button>
-            </Link>
+            )}
 
             <ModeToggle />
 

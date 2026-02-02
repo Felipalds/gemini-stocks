@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.StockPrice{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.StockPrice{}, &models.PortfolioGoal{}, &models.GoalAllocation{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
@@ -64,6 +64,7 @@ func main() {
 	dataHandler := handlers.NewDataHandler(db, sugar)
 	transactionHandler := handlers.NewTransactionHandler(db, sugar, financeService)
 	priceHandler := handlers.NewPriceHandler(db, sugar, financeService)
+	goalHandler := handlers.NewGoalHandler(db, sugar)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -92,6 +93,11 @@ func main() {
 		r.Get("/", priceHandler.GetAll)
 		r.Post("/refresh", priceHandler.RefreshPrices)
 		r.Put("/", priceHandler.UpdatePrice)
+	})
+
+	r.Route("/goal", func(r chi.Router) {
+		r.Get("/", goalHandler.GetGoal)
+		r.Post("/", goalHandler.SaveGoal)
 	})
 
 	// 6. Start Server

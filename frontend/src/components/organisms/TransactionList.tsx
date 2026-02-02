@@ -52,6 +52,10 @@ export function TransactionList({
       year: "numeric",
     });
 
+  const sortedList = transactions
+    .slice()
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   const getPnLColor = (value: number | undefined) => {
     if (!value) return "text-muted-foreground";
     if (value > 0) return "text-emerald-600 font-bold";
@@ -94,7 +98,7 @@ export function TransactionList({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transactions.map((t) => (
+                {sortedList.map((t) => (
                   <TableRow key={t.ID}>
                     <TableCell>
                       <TransactionTypeBadge type={t.type} />
