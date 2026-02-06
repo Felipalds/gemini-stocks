@@ -1,7 +1,5 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { DollarSign } from "lucide-react";
 import { type Transaction } from "@/types";
 import { type StockPriceInfo } from "@/contexts/AppContext";
@@ -16,7 +14,7 @@ interface PortfolioSummaryProps {
   transactions: Transaction[];
   stockPrices: StockPriceInfo[];
   dollarRate: number;
-  onDollarRateChange: (rate: number) => void;
+  dollarRateUpdatedAt?: string | null;
   hideValues?: boolean;
 }
 
@@ -26,10 +24,9 @@ export function PortfolioSummary({
   transactions,
   stockPrices,
   dollarRate,
-  onDollarRateChange,
+  dollarRateUpdatedAt,
   hideValues,
 }: PortfolioSummaryProps) {
-  const [rateInput, setRateInput] = useState(String(dollarRate));
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 
@@ -138,14 +135,15 @@ export function PortfolioSummary({
   const totalPnlInBRL = totalPnlBRL + totalPnlUSD * dollarRate;
   const isPnlPositive = totalPnlInBRL >= 0;
 
-  const handleRateBlur = () => {
-    const parsed = parseFloat(rateInput);
-    if (!isNaN(parsed) && parsed > 0) {
-      onDollarRateChange(parsed);
-    } else {
-      setRateInput(String(dollarRate));
-    }
-  };
+  // Format the dollar rate update date
+  const formattedRateDate = dollarRateUpdatedAt
+    ? new Date(dollarRateUpdatedAt).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -172,23 +170,11 @@ export function PortfolioSummary({
               ? HIDDEN
               : `${formatCurrency(totalUSD, "USD")} in dollar`}
           </p>
-          <div className="flex items-center gap-2 pt-2">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">
-              USD 1 =
-            </Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              className="h-7 w-24 text-xs"
-              value={rateInput}
-              onChange={(e) => setRateInput(e.target.value)}
-              onBlur={handleRateBlur}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRateBlur();
-              }}
-            />
-            <span className="text-xs text-muted-foreground">BRL</span>
+          <div className="pt-2 text-xs text-muted-foreground">
+            <span>USD 1 = R$ {dollarRate.toFixed(2)}</span>
+            {formattedRateDate && (
+              <span className="ml-2 text-[10px]">({formattedRateDate})</span>
+            )}
           </div>
         </CardContent>
       </Card>

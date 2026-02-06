@@ -18,6 +18,12 @@ export interface TickerData {
   tags: string[];
   category: string;
   currency: string;
+  // Original currency values (for USD assets)
+  originalCurrency?: string;
+  avgBuyPriceOriginal?: number;
+  currentPriceOriginal?: number;
+  pnlOriginal?: number;
+  totalValueOriginal?: number;
 }
 
 const HIDDEN = "••••••";
@@ -42,7 +48,10 @@ export function TickerCard({
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
+  const fmtOriginal = (val: number) =>
+    formatCurrency(val, ticker.originalCurrency || "USD");
   const isPositive = ticker.pnl >= 0;
+  const hasOriginalCurrency = ticker.originalCurrency === "USD";
 
   // Scale opacity from 0.08 (0%) to 0.35 (>=20%) based on |pnlPercent|
   const intensity = Math.min(Math.abs(ticker.pnlPercent) / 20, 1);
@@ -105,8 +114,17 @@ export function TickerCard({
         <CardContent
           className={`${compact ? "px-3 py-1" : "px-3 pb-3"} space-y-1`}
         >
-          <div className={`${compact ? "text-lg" : "text-2xl"} font-bold`}>
-            {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+          <div>
+            <div className={`${compact ? "text-lg" : "text-2xl"} font-bold`}>
+              {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+            </div>
+            {!compact &&
+              hasOriginalCurrency &&
+              ticker.totalValueOriginal !== undefined && (
+                <div className="text-xs text-muted-foreground">
+                  {hideValues ? HIDDEN : fmtOriginal(ticker.totalValueOriginal)}
+                </div>
+              )}
           </div>
           {!compact && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
@@ -117,12 +135,22 @@ export function TickerCard({
 
               <span className="text-muted-foreground">Avg Buy Price</span>
               <span className="text-right font-medium">
-                {hideValues ? HIDDEN : fmt(ticker.avgBuyPrice)}
+                {hideValues
+                  ? HIDDEN
+                  : hasOriginalCurrency &&
+                      ticker.avgBuyPriceOriginal !== undefined
+                    ? fmtOriginal(ticker.avgBuyPriceOriginal)
+                    : fmt(ticker.avgBuyPrice)}
               </span>
 
               <span className="text-muted-foreground">Current Price</span>
               <span className="text-right font-medium">
-                {hideValues ? HIDDEN : fmt(ticker.currentPrice)}
+                {hideValues
+                  ? HIDDEN
+                  : hasOriginalCurrency &&
+                      ticker.currentPriceOriginal !== undefined
+                    ? fmtOriginal(ticker.currentPriceOriginal)
+                    : fmt(ticker.currentPrice)}
               </span>
 
               <span className="text-muted-foreground">P&L</span>
@@ -137,7 +165,9 @@ export function TickerCard({
               >
                 {hideValues
                   ? HIDDEN
-                  : `${isPositive ? "+" : ""}${fmt(ticker.pnl)}`}
+                  : hasOriginalCurrency && ticker.pnlOriginal !== undefined
+                    ? `${isPositive ? "+" : ""}${fmtOriginal(ticker.pnlOriginal)}`
+                    : `${isPositive ? "+" : ""}${fmt(ticker.pnl)}`}
               </span>
             </div>
           )}

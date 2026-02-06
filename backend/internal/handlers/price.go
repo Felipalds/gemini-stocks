@@ -28,10 +28,29 @@ func NewPriceHandler(db *gorm.DB, logger *zap.SugaredLogger, finance *services.F
 
 // RefreshPrices handles POST /prices/refresh
 // It iterates over all known stocks and updates their prices from the API
+// Also updates the USD/BRL exchange rate
 func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	h.Logger.Info("Starting manual price update...")
 
-	// 1. Get all unique stocks from the StockPrice table
+	// 1. First, update USD/BRL exchange rate
+	h.Logger.Info("Fetching USD/BRL exchange rate...")
+	usdRate, err := h.Finance.GetExchangeRate("USD", "BRL")
+	if err != nil {
+		h.Logger.Warnf("Failed to fetch USD/BRL rate: %v", err)
+	} else {
+		currency := models.Currency{
+			Code:      "USD",
+			Rate:      usdRate,
+			UpdatedAt: time.Now(),
+		}
+		if err := h.DB.Save(&currency).Error; err != nil {
+			h.Logger.Warnf("Failed to save USD rate: %v", err)
+		} else {
+			h.Logger.Infof("USD/BRL rate updated: %.4f", usdRate)
+		}
+	}
+
+	// 2. Get all unique stocks from the StockPrice table
 	var stocks []models.StockPrice
 	if err := h.DB.Find(&stocks).Error; err != nil {
 		h.Logger.Error("Failed to fetch stocks", zap.Error(err))
@@ -39,7 +58,7 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Iterate and Update
+	// 3. Iterate and Update
 	updatedCount := 0
 	for _, stock := range stocks {
 		// Call your existing finance service
@@ -53,9 +72,6 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 		stock.Price = newPrice
 		h.DB.Save(&stock)
 		updatedCount++
-
-		// IMPORTANT: Sleep to respect API rate limits (8 requests/minute on free tier)
-		time.Sleep(8 * time.Second)
 	}
 
 	h.Logger.Infof("Updated %d stocks successfully", updatedCount)

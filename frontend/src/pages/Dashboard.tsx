@@ -16,8 +16,8 @@ export default function DashboardPage() {
     loading,
     syncing,
     dollarRate,
+    dollarRateUpdatedAt,
     hideValues,
-    setDollarRate,
     toggleHideValues,
     refreshData,
     syncPrices,
@@ -93,7 +93,8 @@ export default function DashboardPage() {
       const pnlPercent =
         totalCostBasis !== 0 ? (pnl / totalCostBasis) * 100 : 0;
 
-      result.push({
+      // For USD assets, also store original USD values
+      const tickerData: TickerData = {
         symbol,
         netQuantity,
         avgBuyPrice: avgBuyPrice * rate,
@@ -104,7 +105,22 @@ export default function DashboardPage() {
         tags: tagsMap.get(symbol) ?? [],
         category: categoryMap.get(symbol) ?? "",
         currency: "BRL",
-      });
+      };
+
+      if (currency === "USD") {
+        const totalValueUSD = netQuantity * data.currentPrice;
+        const totalCostBasisUSD = netQuantity * avgBuyPrice;
+        const totalFeesUSD = data.totalFees;
+        const pnlUSD = totalValueUSD - totalCostBasisUSD - totalFeesUSD;
+
+        tickerData.originalCurrency = "USD";
+        tickerData.avgBuyPriceOriginal = avgBuyPrice;
+        tickerData.currentPriceOriginal = data.currentPrice;
+        tickerData.pnlOriginal = pnlUSD;
+        tickerData.totalValueOriginal = totalValueUSD;
+      }
+
+      result.push(tickerData);
     }
 
     return result.sort((a, b) => b.totalValue - a.totalValue);
@@ -159,7 +175,7 @@ export default function DashboardPage() {
         transactions={transactions}
         stockPrices={stockPrices}
         dollarRate={dollarRate}
-        onDollarRateChange={setDollarRate}
+        dollarRateUpdatedAt={dollarRateUpdatedAt}
         hideValues={hideValues}
       />
 

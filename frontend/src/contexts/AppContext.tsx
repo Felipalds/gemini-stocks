@@ -18,14 +18,20 @@ export interface StockPriceInfo {
   updated_at: string;
 }
 
+export interface CurrencyInfo {
+  code: string;
+  rate: number;
+  updated_at: string;
+}
+
 interface AppContextValue {
   transactions: Transaction[];
   stockPrices: StockPriceInfo[];
   loading: boolean;
   syncing: boolean;
   dollarRate: number;
+  dollarRateUpdatedAt: string | null;
   hideValues: boolean;
-  setDollarRate: (rate: number) => void;
   toggleHideValues: () => void;
   refreshData: () => void;
   syncPrices: () => Promise<void>;
@@ -38,7 +44,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [stockPrices, setStockPrices] = useState<StockPriceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [dollarRate, setDollarRate] = useState(5.2);
+  const [dollarRate, setDollarRate] = useState(5.5);
+  const [dollarRateUpdatedAt, setDollarRateUpdatedAt] = useState<string | null>(
+    null,
+  );
   const [hideValues, setHideValues] = useState(false);
 
   const refreshData = useCallback(() => {
@@ -46,10 +55,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     Promise.all([
       fetch("http://localhost:8080/transactions").then((r) => r.json()),
       fetch("http://localhost:8080/prices").then((r) => r.json()),
+      fetch("http://localhost:8080/currencies/usd").then((r) => r.json()),
     ])
-      .then(([txData, priceData]) => {
+      .then(([txData, priceData, currencyData]) => {
         setTransactions(txData || []);
         setStockPrices(priceData || []);
+        if (currencyData && currencyData.rate) {
+          setDollarRate(currencyData.rate);
+          setDollarRateUpdatedAt(currencyData.updated_at || null);
+        }
       })
       .catch((err) => console.error("Error fetching:", err))
       .finally(() => setLoading(false));
@@ -105,8 +119,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         loading,
         syncing,
         dollarRate,
+        dollarRateUpdatedAt,
         hideValues,
-        setDollarRate,
         toggleHideValues,
         refreshData,
         syncPrices,
