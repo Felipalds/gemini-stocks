@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Felipalds/gemini-stocks/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -25,10 +26,13 @@ func NewFinanceService(logger *zap.SugaredLogger) *FinanceService {
 	}
 }
 
-type globalQuoteResponse struct {
+type apiResponse struct {
 	GlobalQuote struct {
-		Price string `json:"05. price"`
+		Price            string `json:"05. price"`
+		DayChangePercent string `json:"10. change percent"`
 	} `json:"Global Quote"`
+
+	Information string `json:"Information"`
 }
 
 // buildAlphaSymbol converts our internal symbol to the Alpha Vantage query symbol.
@@ -46,43 +50,57 @@ func buildAlphaSymbol(symbol string, currency string) string {
 	return alphaSymbol
 }
 
-// GetPriceFromAPI fetches the real-time price from Alpha Vantage
-func (s *FinanceService) GetPriceFromAPI(symbol string, currency string) (float64, error) {
+// UpdateTickerFromAPI updates some infos about the ticker
+func (s *FinanceService) UpdateTickerFromAPI(symbol string, currency string) (models.Ticker, error) {
+	var updatedTicker models.Ticker
 	if s.alphaApiKey == "" {
-		return 0, fmt.Errorf("API key is missing")
+		return updatedTicker, fmt.Errorf("API key is missing")
 	}
 
 	alphaSymbol := buildAlphaSymbol(symbol, currency)
 
-	url := fmt.Sprintf(s.alphaApiBaseUrl+"?function=GLOBAL_QUOTE&symbol=%s&apikey=%s", alphaSymbol, s.alphaApiKey)
-	s.Logger.Infof("Fetching price for %s (query: %s)", symbol, alphaSymbol)
+	url := fmt.Sprintf(s.alphaApiBaseUrl+"/query?function=GLOBAL_QUOTE&symbol=%s&apikey=%s", alphaSymbol, s.alphaApiKey)
+	s.Logger.Infof("Fetching price for %s (query: %s, url: %s)", symbol, alphaSymbol, url)
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, err
+		return updatedTicker, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("API returned status %d", resp.StatusCode)
+		return updatedTicker, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
-	var data globalQuoteResponse
+	var data apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, err
+		return updatedTicker, err
 	}
 
-	if data.GlobalQuote.Price == "" {
-		return 0, fmt.Errorf("no price data returned for %s", alphaSymbol)
+	s.Logger.Debug("Data received: ", data)
+
+	if strings.Contains(data.Information, "rate limit") {
+		return updatedTicker, fmt.Errorf("rate limit exceeded")
+	}
+
+	if data.GlobalQuote.Price == "" && resp.StatusCode != 200 {
+		return updatedTicker, fmt.Errorf("no price data returned for %s", alphaSymbol)
 	}
 
 	price, err := strconv.ParseFloat(data.GlobalQuote.Price, 64)
 	if err != nil {
-		return 0, err
+		return updatedTicker, err
+	}
+
+	dayChangePercent, err := strconv.ParseFloat(strings.Replace(data.GlobalQuote.DayChangePercent, "%", "", -1), 64)
+	if err != nil {
+		return updatedTicker, err
 	}
 
 	s.Logger.Infof("Price for %s: %.2f", symbol, price)
-	return price, nil
+	updatedTicker.Price = price
+	updatedTicker.DayChangePercent = dayChangePercent
+	return updatedTicker, nil
 }
 
 type currencyExchangeResponse struct {

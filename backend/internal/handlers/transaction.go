@@ -53,20 +53,21 @@ func NewTransactionHandler(db *gorm.DB, logger *zap.SugaredLogger, financeServic
 
 // ensureStockExists checks if a ticker exists in stock_prices; if not, creates it and fetches the price.
 func (h *TransactionHandler) ensureStockExists(symbol, currency string) {
-	var stock models.StockPrice
-	if err := h.DB.First(&stock, "symbol = ?", symbol).Error; err != nil {
+	var ticker models.Ticker
+	if err := h.DB.First(&ticker, "symbol = ?", symbol).Error; err != nil {
 		h.Logger.Infof("New stock symbol detected: %s. Fetching initial price...", symbol)
 
-		currentPrice, err := h.Finance.GetPriceFromAPI(symbol, currency)
+		ticker, err := h.Finance.UpdateTickerFromAPI(symbol, currency)
 		if err != nil {
 			h.Logger.Warn("Could not fetch initial price from API", zap.Error(err))
-			currentPrice = 0
+			ticker.Price = 0
 		}
 
-		newStock := models.StockPrice{
-			Symbol:   symbol,
-			Price:    currentPrice,
-			Currency: currency,
+		newStock := models.Ticker{
+			Symbol:           symbol,
+			Price:            ticker.Price,
+			DayChangePercent: ticker.DayChangePercent,
+			Currency:         currency,
 		}
 		if err := h.DB.Create(&newStock).Error; err != nil {
 			h.Logger.Error("Failed to save new stock ticker", zap.Error(err))
@@ -131,7 +132,7 @@ func (h *TransactionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Fetch ALL cached prices (Query #2)
 	// We get everything in one shot instead of querying inside the loop
-	var stockPrices []models.StockPrice
+	var stockPrices []models.Ticker
 	if err := h.DB.Find(&stockPrices).Error; err != nil {
 		h.Logger.Warn("Failed to fetch stock prices", zap.Error(err))
 		// We continue; we just won't have price data

@@ -50,6 +50,7 @@ export default function DashboardPage() {
         totalBuyCost: number;
         totalFees: number;
         currentPrice: number;
+        dayChangePercent: number;
       }
     >();
 
@@ -99,6 +100,7 @@ export default function DashboardPage() {
         netQuantity,
         avgBuyPrice: avgBuyPrice * rate,
         currentPrice: data.currentPrice * rate,
+        dayChangePercent: data.dayChangePercent * rate,
         totalValue,
         pnl,
         pnlPercent,

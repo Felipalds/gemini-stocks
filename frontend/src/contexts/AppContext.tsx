@@ -12,6 +12,7 @@ import { toast } from "sonner";
 export interface StockPriceInfo {
   symbol: string;
   price: number;
+  day_change_percent: number;
   tags: string;
   category: string;
   currency: string;
@@ -72,7 +73,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const syncPrices = useCallback(async () => {
     setSyncing(true);
     const toastId = toast.loading("Syncing prices...", {
-      description: "Fetching latest data from Twelvedata.",
+      description: "Fetching latest data from API.",
     });
 
     try {

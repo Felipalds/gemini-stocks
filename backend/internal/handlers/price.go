@@ -51,7 +51,7 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Get all unique stocks from the StockPrice table
-	var stocks []models.StockPrice
+	var stocks []models.Ticker
 	if err := h.DB.Find(&stocks).Error; err != nil {
 		h.Logger.Error("Failed to fetch stocks", zap.Error(err))
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -62,26 +62,27 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	updatedCount := 0
 	for _, stock := range stocks {
 		// Call your existing finance service
-		newPrice, err := h.Finance.GetPriceFromAPI(stock.Symbol, stock.Currency)
+		newTicker, err := h.Finance.UpdateTickerFromAPI(stock.Symbol, stock.Currency)
 		if err != nil {
 			h.Logger.Warnf("Failed to update %s: %v", stock.Symbol, err)
 			continue
 		}
 
 		// Update DB
-		stock.Price = newPrice
+		stock.Price = newTicker.Price
+		stock.DayChangePercent = newTicker.DayChangePercent
 		h.DB.Save(&stock)
 		updatedCount++
 	}
 
 	h.Logger.Infof("Updated %d stocks successfully", updatedCount)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Prices updated successfully"))
+	w.Write([]byte("Prices updated successfulssssssy"))
 }
 
 // GetAll handles GET /prices
 func (h *PriceHandler) GetAll(w http.ResponseWriter, r *http.Request) {
-	var prices []models.StockPrice
+	var prices []models.Ticker
 	if err := h.DB.Find(&prices).Error; err != nil {
 		h.Logger.Error("Failed to fetch stock prices", zap.Error(err))
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -111,7 +112,7 @@ func (h *PriceHandler) UpdatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var stock models.StockPrice
+	var stock models.Ticker
 	if err := h.DB.First(&stock, "symbol = ?", body.Symbol).Error; err != nil {
 		http.Error(w, "Stock not found", http.StatusNotFound)
 		return

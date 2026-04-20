@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.StockPrice{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 

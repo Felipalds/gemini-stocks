@@ -12,6 +12,7 @@ export interface TickerData {
   netQuantity: number;
   avgBuyPrice: number;
   currentPrice: number;
+  dayChangePercent: number;
   totalValue: number;
   pnl: number;
   pnlPercent: number;
@@ -96,7 +97,7 @@ export function TickerCard({
                   <TrendingDown className="mr-1 h-3 w-3" />
                 ))}
               {isPositive ? "+" : ""}
-              {ticker.pnlPercent.toFixed(2)}%
+              {ticker.dayChangePercent.toFixed(2)}%
             </Badge>
             <Button
               variant="ghost"
