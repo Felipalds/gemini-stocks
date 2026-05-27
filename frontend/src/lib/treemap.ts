@@ -24,7 +24,7 @@ interface Rect {
   height: number;
 }
 
-function worstAspectRatio(row: number[], length: number, totalArea: number): number {
+function worstAspectRatio(row: number[], length: number): number {
   const rowSum = row.reduce((a, b) => a + b, 0);
   if (rowSum === 0) return Infinity;
   const rowMax = Math.max(...row);
@@ -91,12 +91,12 @@ export function squarify(items: TreemapItem[], containerWidth: number, container
 
     row.push(areas[index]);
     rowIds.push(ids[index]);
-    let worst = worstAspectRatio(row, length, totalArea);
+    let worst = worstAspectRatio(row, length);
     index++;
 
     while (index < areas.length) {
       const newRow = [...row, areas[index]];
-      const newWorst = worstAspectRatio(newRow, length, totalArea);
+      const newWorst = worstAspectRatio(newRow, length);
       if (newWorst > worst) break;
       row.push(areas[index]);
       rowIds.push(ids[index]);

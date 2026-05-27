@@ -69,12 +69,12 @@ function CustomTooltip({
 }
 
 interface LegendEntry {
-  value: string;
-  color: string;
+  value?: string;
+  color?: string;
 }
 
 interface CustomLegendProps {
-  payload?: LegendEntry[];
+  payload?: readonly LegendEntry[];
   filteredData: PieSlice[];
 }
 
@@ -83,8 +83,9 @@ function CustomLegend({ payload, filteredData }: CustomLegendProps) {
 
   // Get top 3 by value from filtered data (already sorted)
   const top3Names = filteredData.slice(0, 3).map((d) => d.name);
-  const top3Entries = payload.filter((entry) =>
-    top3Names.includes(entry.value),
+  const top3Entries = payload.filter(
+    (entry): entry is { value: string; color?: string } =>
+      typeof entry.value === "string" && top3Names.includes(entry.value),
   );
 
   return (
