@@ -40,17 +40,25 @@ func (h *CurrencyHandler) GetCurrencies(w http.ResponseWriter, r *http.Request) 
 
 // GetUSDRate handles GET /currencies/usd
 func (h *CurrencyHandler) GetUSDRate(w http.ResponseWriter, r *http.Request) {
+	h.respondWithRate(w, "USD", 5.50)
+}
+
+// GetBTCRate handles GET /currencies/btc
+func (h *CurrencyHandler) GetBTCRate(w http.ResponseWriter, r *http.Request) {
+	h.respondWithRate(w, "BTC", 0)
+}
+
+func (h *CurrencyHandler) respondWithRate(w http.ResponseWriter, code string, fallback float64) {
 	var currency models.Currency
-	if err := h.DB.First(&currency, "code = ?", "USD").Error; err != nil {
-		// If not found, return default rate
+	if err := h.DB.First(&currency, "code = ?", code).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			currency = models.Currency{
-				Code:      "USD",
-				Rate:      5.50, // Default fallback
+				Code:      code,
+				Rate:      fallback,
 				UpdatedAt: time.Now(),
 			}
 		} else {
-			h.Logger.Error("Failed to fetch USD rate", zap.Error(err))
+			h.Logger.Error("Failed to fetch rate", zap.String("code", code), zap.Error(err))
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
 		}
@@ -62,29 +70,37 @@ func (h *CurrencyHandler) GetUSDRate(w http.ResponseWriter, r *http.Request) {
 
 // RefreshUSDRate handles POST /currencies/refresh
 func (h *CurrencyHandler) RefreshUSDRate(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("Fetching USD/BRL exchange rate...")
+	h.refreshAndRespond(w, "USD")
+}
 
-	rate, err := h.Finance.GetExchangeRate("USD", "BRL")
+// RefreshBTCRate handles POST /currencies/btc/refresh
+func (h *CurrencyHandler) RefreshBTCRate(w http.ResponseWriter, r *http.Request) {
+	h.refreshAndRespond(w, "BTC")
+}
+
+func (h *CurrencyHandler) refreshAndRespond(w http.ResponseWriter, code string) {
+	h.Logger.Infof("Fetching %s/BRL exchange rate...", code)
+
+	rate, err := h.Finance.GetExchangeRate(code, "BRL")
 	if err != nil {
-		h.Logger.Error("Failed to fetch USD/BRL rate", zap.Error(err))
+		h.Logger.Error("Failed to fetch rate", zap.String("code", code), zap.Error(err))
 		http.Error(w, "Failed to fetch exchange rate: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Upsert the USD currency
 	currency := models.Currency{
-		Code:      "USD",
+		Code:      code,
 		Rate:      rate,
 		UpdatedAt: time.Now(),
 	}
 
 	if err := h.DB.Save(&currency).Error; err != nil {
-		h.Logger.Error("Failed to save USD rate", zap.Error(err))
+		h.Logger.Error("Failed to save rate", zap.String("code", code), zap.Error(err))
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
-	h.Logger.Infof("USD/BRL rate updated: %.4f", rate)
+	h.Logger.Infof("%s/BRL rate updated: %.4f", code, rate)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(currency)

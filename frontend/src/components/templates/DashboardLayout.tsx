@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom"; // <--- Add this import
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,7 @@ import {
   EyeOff,
   Target,
   List,
+  Wallet,
 } from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 
@@ -82,6 +83,13 @@ export function DashboardLayout({
               <Button variant={"outline"}>
                 <Plus className="mr-2 h-4 w-4" />
                 New Transaction
+              </Button>
+            </Link>
+
+            <Link to="/expenses">
+              <Button variant={"outline"}>
+                <Wallet className="mr-2 h-4 w-4" />
+                Expenses
               </Button>
             </Link>
 

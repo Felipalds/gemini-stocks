@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,10 @@ export function TransactionFormFields({
   saving = false,
 }: TransactionFormFieldsProps) {
   const form = useForm<TransactionFormValues>({
-    resolver: zodResolver(transactionFormSchema),
+    // z.coerce.* gives the schema an `unknown` input type while its output
+    // is the parsed value; the resolver from @hookform/resolvers v5 surfaces
+    // that mismatch. Cast keeps the form API working with the output type.
+    resolver: zodResolver(transactionFormSchema) as unknown as Resolver<TransactionFormValues>,
     defaultValues: {
       symbol: "",
       type: "BUY",

@@ -97,7 +97,7 @@ export function TickerCard({
                   <TrendingDown className="mr-1 h-3 w-3" />
                 ))}
               {isPositive ? "+" : ""}
-              {ticker.dayChangePercent.toFixed(2)}%
+              {ticker.pnlPercent.toFixed(2)}%
             </Badge>
             <Button
               variant="ghost"

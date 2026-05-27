@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
@@ -66,6 +66,8 @@ func main() {
 	priceHandler := handlers.NewPriceHandler(db, sugar, financeService)
 	goalHandler := handlers.NewGoalHandler(db, sugar)
 	currencyHandler := handlers.NewCurrencyHandler(db, sugar, financeService)
+	expenseHandler := handlers.NewExpenseHandler(db, sugar)
+	budgetHandler := handlers.NewBudgetHandler(db, sugar)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -104,7 +106,26 @@ func main() {
 	r.Route("/currencies", func(r chi.Router) {
 		r.Get("/", currencyHandler.GetCurrencies)
 		r.Get("/usd", currencyHandler.GetUSDRate)
+		r.Get("/btc", currencyHandler.GetBTCRate)
 		r.Post("/refresh", currencyHandler.RefreshUSDRate)
+		r.Post("/btc/refresh", currencyHandler.RefreshBTCRate)
+	})
+
+	r.Route("/expenses", func(r chi.Router) {
+		r.Post("/", expenseHandler.Create)
+		r.Get("/", expenseHandler.List)
+		r.Put("/{id}", expenseHandler.Update)
+		r.Delete("/{id}", expenseHandler.Delete)
+		r.Get("/totals", expenseHandler.Totals)
+		r.Get("/categories", expenseHandler.Categories)
+		r.Get("/analytics", expenseHandler.Analytics)
+	})
+
+	r.Route("/budgets", func(r chi.Router) {
+		r.Get("/", budgetHandler.List)
+		r.Post("/", budgetHandler.Create)
+		r.Put("/{id}", budgetHandler.Update)
+		r.Delete("/{id}", budgetHandler.Delete)
 	})
 
 	// 6. Start Server

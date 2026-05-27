@@ -32,21 +32,23 @@ func NewPriceHandler(db *gorm.DB, logger *zap.SugaredLogger, finance *services.F
 func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	h.Logger.Info("Starting manual price update...")
 
-	// 1. First, update USD/BRL exchange rate
-	h.Logger.Info("Fetching USD/BRL exchange rate...")
-	usdRate, err := h.Finance.GetExchangeRate("USD", "BRL")
-	if err != nil {
-		h.Logger.Warnf("Failed to fetch USD/BRL rate: %v", err)
-	} else {
+	// 1. First, refresh fiat / crypto rates against BRL
+	for _, code := range []string{"USD", "BTC"} {
+		h.Logger.Infof("Fetching %s/BRL exchange rate...", code)
+		rate, err := h.Finance.GetExchangeRate(code, "BRL")
+		if err != nil {
+			h.Logger.Warnf("Failed to fetch %s/BRL rate: %v", code, err)
+			continue
+		}
 		currency := models.Currency{
-			Code:      "USD",
-			Rate:      usdRate,
+			Code:      code,
+			Rate:      rate,
 			UpdatedAt: time.Now(),
 		}
 		if err := h.DB.Save(&currency).Error; err != nil {
-			h.Logger.Warnf("Failed to save USD rate: %v", err)
+			h.Logger.Warnf("Failed to save %s rate: %v", code, err)
 		} else {
-			h.Logger.Infof("USD/BRL rate updated: %.4f", usdRate)
+			h.Logger.Infof("%s/BRL rate updated: %.4f", code, rate)
 		}
 	}
 

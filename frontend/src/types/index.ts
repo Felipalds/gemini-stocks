@@ -1,3 +1,24 @@
+export type RecurringKind = "" | "monthly" | "annually";
+
+export interface Expense {
+  ID: string;
+  name: string;
+  category: string;
+  value: number;
+  currency: "BRL" | "USD" | "BTC";
+  date: string;
+  note: string;
+  recurring: RecurringKind;
+  value_brl?: number;
+}
+
+export interface PaginatedExpenses {
+  page: number;
+  page_size: number;
+  total: number;
+  items: Expense[];
+}
+
 export interface Transaction {
   ID: string; // <--- Mudou de number para string
   symbol: string;
@@ -12,7 +33,7 @@ export interface Transaction {
   // --- New Calculated Fields (Optional) ---
   // They are optional (?) because they might not exist
   // immediately when you create a new transaction locally.
-  current_price?: number; // From Twelvedata
+  current_price?: number; // From Alpha Vantage
   market_value?: number; // current_price * quantity
   pnl?: number; // Profit/Loss ($)
   pnl_percent?: number; // Profit/Loss (%)

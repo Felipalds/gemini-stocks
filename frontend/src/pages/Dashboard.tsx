@@ -33,6 +33,7 @@ export default function DashboardPage() {
     const tagsMap = new Map<string, string[]>();
     const categoryMap = new Map<string, string>();
     const currencyMap = new Map<string, string>();
+    const dayChangeMap = new Map<string, number>();
     for (const sp of stockPrices) {
       const tags = sp.tags
         ? sp.tags.split(",").filter((t) => t.trim() !== "")
@@ -40,6 +41,7 @@ export default function DashboardPage() {
       tagsMap.set(sp.symbol, tags);
       categoryMap.set(sp.symbol, sp.category || "");
       currencyMap.set(sp.symbol, sp.currency || "USD");
+      dayChangeMap.set(sp.symbol, sp.day_change_percent ?? 0);
     }
 
     const map = new Map<
@@ -50,7 +52,6 @@ export default function DashboardPage() {
         totalBuyCost: number;
         totalFees: number;
         currentPrice: number;
-        dayChangePercent: number;
       }
     >();
 
@@ -100,7 +101,7 @@ export default function DashboardPage() {
         netQuantity,
         avgBuyPrice: avgBuyPrice * rate,
         currentPrice: data.currentPrice * rate,
-        dayChangePercent: data.dayChangePercent * rate,
+        dayChangePercent: dayChangeMap.get(symbol) ?? 0,
         totalValue,
         pnl,
         pnlPercent,
