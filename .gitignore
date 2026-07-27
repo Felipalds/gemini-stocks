@@ -26,4 +26,10 @@ backend/main.exe
 # Banco de dados SQLite (Não suba seu banco local!)
 backend/*.db
 backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
+backend/*.db.bak*
 backend/*.sqlite
+
+# --- Outros ---
+frontend/yarn.lock
