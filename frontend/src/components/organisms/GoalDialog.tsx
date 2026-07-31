@@ -19,13 +19,13 @@ interface GoalDialogProps {
 }
 
 export function GoalDialog({ open, onOpenChange }: GoalDialogProps) {
-  const { stockPrices } = useApp();
+  const { stockPrices, fixedBalances } = useApp();
   const [goalTotal, setGoalTotal] = useState("");
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // Derive unique categories from stockPrices
+  // Categories from tickers + fixed balances; always include FIXA for renda fixa
   const categories = useMemo(() => {
     const set = new Set<string>();
     for (const sp of stockPrices) {
@@ -33,8 +33,14 @@ export function GoalDialog({ open, onOpenChange }: GoalDialogProps) {
         set.add(sp.category.trim());
       }
     }
+    for (const fb of fixedBalances) {
+      if (fb.category && fb.category.trim() !== "") {
+        set.add(fb.category.trim());
+      }
+    }
+    set.add("FIXA");
     return Array.from(set).sort();
-  }, [stockPrices]);
+  }, [stockPrices, fixedBalances]);
 
   // Load existing goal when dialog opens
   useEffect(() => {

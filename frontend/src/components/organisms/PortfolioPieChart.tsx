@@ -81,22 +81,23 @@ interface CustomLegendProps {
 function CustomLegend({ payload, filteredData }: CustomLegendProps) {
   if (!payload?.length || !filteredData.length) return null;
 
-  // Get top 3 by value from filtered data (already sorted)
-  const top3Names = filteredData.slice(0, 3).map((d) => d.name);
-  const top3Entries = payload.filter(
-    (entry): entry is { value: string; color?: string } =>
-      typeof entry.value === "string" && top3Names.includes(entry.value),
+  // Top 3 by value (filteredData is already sorted desc) — keep that left-to-right order
+  const top3 = filteredData.slice(0, 3);
+  const colorByName = new Map(
+    payload
+      .filter((e): e is { value: string; color?: string } => typeof e.value === "string")
+      .map((e) => [e.value, e.color]),
   );
 
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 justify-center text-xs">
-      {top3Entries.map((entry) => (
-        <li key={entry.value} className="flex items-center gap-1.5">
+      {top3.map((slice) => (
+        <li key={slice.name} className="flex items-center gap-1.5">
           <span
             className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: entry.color }}
+            style={{ backgroundColor: colorByName.get(slice.name) }}
           />
-          <span className="text-muted-foreground">{entry.value}</span>
+          <span className="text-muted-foreground">{slice.name}</span>
         </li>
       ))}
     </ul>
