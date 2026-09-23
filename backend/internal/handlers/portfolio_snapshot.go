@@ -88,7 +88,6 @@ func (h *PortfolioSnapshotHandler) computeTotals() (portfolioTotals, error) {
 	type agg struct {
 		buyQty, sellQty, buyCost, fees float64
 		currency                       string
-		currentPrice                   float64
 	}
 	bySymbol := map[string]*agg{}
 
@@ -108,18 +107,18 @@ func (h *PortfolioSnapshotHandler) computeTotals() (portfolioTotals, error) {
 			a.sellQty += float64(t.Quantity)
 		}
 		a.fees += t.Fee
-		if sp, ok := priceMap[t.Symbol]; ok {
-			a.currentPrice = sp.Price
-			if sp.Currency != "" {
-				a.currency = sp.Currency
-			}
-		}
 	}
 
 	var usdValue, brlValue, usdCost, brlCost float64
 	for symbol, a := range bySymbol {
 		net := a.buyQty - a.sellQty
-		value := net * a.currentPrice
+		// The position's currency is the transaction currency; convert the
+		// cached ticker price (in its own currency) into it before valuing.
+		currentPrice := 0.0
+		if sp, ok := priceMap[symbol]; ok {
+			currentPrice = convertPrice(sp.Price, sp.Currency, a.currency, rate)
+		}
+		value := net * currentPrice
 		avg := 0.0
 		if a.buyQty > 0 {
 			avg = a.buyCost / a.buyQty

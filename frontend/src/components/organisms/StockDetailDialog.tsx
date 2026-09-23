@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -8,8 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Pencil, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, Pencil, RefreshCw, Plus } from "lucide-react";
 import { type TickerData } from "@/components/organisms/TickerCard";
+import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
+import { useApp } from "@/contexts/AppContext";
 import { formatCurrency, formatQuantity } from "@/lib/format";
 import { toast } from "sonner";
 
