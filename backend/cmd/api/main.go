@@ -37,11 +37,13 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
 	sugar.Info("Database migrations completed successfully")
+	handlers.MigrateLegacyFixedBalances(db, sugar)
+	handlers.DeduplicateSnapshotsPerDay(db, sugar)
 
 	sugar.Info("SQLite connection established successfully!")
 
@@ -68,6 +70,9 @@ func main() {
 	currencyHandler := handlers.NewCurrencyHandler(db, sugar, financeService)
 	expenseHandler := handlers.NewExpenseHandler(db, sugar)
 	budgetHandler := handlers.NewBudgetHandler(db, sugar)
+	expenseCategoryHandler := handlers.NewExpenseCategoryHandler(db, sugar)
+	fixedBalanceHandler := handlers.NewFixedBalanceHandler(db, sugar)
+	snapshotHandler := handlers.NewPortfolioSnapshotHandler(db, sugar)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -95,6 +100,7 @@ func main() {
 	r.Route("/prices", func(r chi.Router) {
 		r.Get("/", priceHandler.GetAll)
 		r.Post("/refresh", priceHandler.RefreshPrices)
+		r.Post("/refresh-one", priceHandler.RefreshOne)
 		r.Put("/", priceHandler.UpdatePrice)
 	})
 
@@ -114,6 +120,8 @@ func main() {
 	r.Route("/expenses", func(r chi.Router) {
 		r.Post("/", expenseHandler.Create)
 		r.Get("/", expenseHandler.List)
+		r.Post("/import", expenseHandler.ImportPreview)
+		r.Post("/import/confirm", expenseHandler.ImportConfirm)
 		r.Put("/{id}", expenseHandler.Update)
 		r.Delete("/{id}", expenseHandler.Delete)
 		r.Get("/totals", expenseHandler.Totals)
@@ -126,6 +134,26 @@ func main() {
 		r.Post("/", budgetHandler.Create)
 		r.Put("/{id}", budgetHandler.Update)
 		r.Delete("/{id}", budgetHandler.Delete)
+	})
+
+	r.Route("/expense-categories", func(r chi.Router) {
+		r.Get("/", expenseCategoryHandler.List)
+		r.Post("/", expenseCategoryHandler.Create)
+		r.Put("/{id}", expenseCategoryHandler.Update)
+		r.Delete("/{id}", expenseCategoryHandler.Delete)
+	})
+
+	r.Route("/fixed-balances", func(r chi.Router) {
+		r.Get("/", fixedBalanceHandler.List)
+		r.Post("/", fixedBalanceHandler.Create)
+		r.Put("/{id}", fixedBalanceHandler.Update)
+		r.Delete("/{id}", fixedBalanceHandler.Delete)
+	})
+
+	r.Route("/snapshots", func(r chi.Router) {
+		r.Get("/", snapshotHandler.List)
+		r.Post("/", snapshotHandler.Create)
+		r.Delete("/{id}", snapshotHandler.Delete)
 	})
 
 	// 6. Start Server

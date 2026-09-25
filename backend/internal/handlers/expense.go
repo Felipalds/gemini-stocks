@@ -121,8 +121,9 @@ func (h *ExpenseHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rows []models.Expense
+	// Newest expenses first (statement date, then insert time as tiebreaker).
 	if err := h.DB.
-		Order("date desc, created_at desc").
+		Order("expenses.date DESC, expenses.created_at DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
 		Find(&rows).Error; err != nil {
@@ -146,6 +147,8 @@ func (h *ExpenseHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /expenses/{id}
+// Optional body field bulk_same_name: when true, also updates every other
+// expense that currently shares this row's *old* name (name + category only).
 func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var existing models.Expense
@@ -153,11 +156,20 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Expense not found", http.StatusNotFound)
 		return
 	}
-	var body models.Expense
+
+	var body struct {
+		models.Expense
+		BulkSameName bool `json:"bulk_same_name"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
+
+	oldName := existing.Name
+	newName := body.Name
+	newCategory := body.Category
+
 	existing.Name = body.Name
 	existing.Category = body.Category
 	existing.Value = body.Value
@@ -165,8 +177,27 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	existing.Date = body.Date
 	existing.Note = body.Note
 	existing.Recurring = body.Recurring
+	existing.Bank = body.Bank
+	existing.PaymentType = body.PaymentType
 	if existing.Currency == "" {
 		existing.Currency = "BRL"
+	}
+
+	updatedCount := int64(1)
+	if body.BulkSameName && oldName != "" {
+		updates := map[string]any{
+			"name":     newName,
+			"category": newCategory,
+		}
+		result := h.DB.Model(&models.Expense{}).
+			Where("name = ? AND id <> ?", oldName, existing.ID).
+			Updates(updates)
+		if result.Error != nil {
+			h.Logger.Error("Failed bulk expense update", zap.Error(result.Error))
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		updatedCount += result.RowsAffected
 	}
 
 	if err := h.DB.Save(&existing).Error; err != nil {
@@ -175,9 +206,20 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Keep alias map in sync when renaming (does not rewrite other fields).
+	if newName != "" && newName != oldName {
+		upsertMerchantAlias(h.DB, oldName, newName, newCategory)
+	} else if newCategory != "" {
+		updateAliasCategoryOnly(h.DB, oldName, newCategory)
+	}
+	ensureCategoryExists(h.DB, newCategory)
+
 	rates := h.rateMap()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(expenseResponse{Expense: existing, ValueBRL: toBRL(existing.Value, existing.Currency, rates)})
+	json.NewEncoder(w).Encode(map[string]any{
+		"expense":       expenseResponse{Expense: existing, ValueBRL: toBRL(existing.Value, existing.Currency, rates)},
+		"updated_count": updatedCount,
+	})
 }
 
 // Delete handles DELETE /expenses/{id}
@@ -397,6 +439,7 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 	monthSpendLast := 0.0
 	last30Total := 0.0
 	last12mTotal := 0.0
+	allTimeTotal := 0.0
 	categorySpendThisMonth := map[string]float64{}
 
 	type singleInstance struct {
@@ -412,6 +455,7 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 		brl := toBRL(e.Value, e.Currency, rates)
 		instances := expandRecurringDates(e.Date, e.Recurring, time.Time{}, now)
 		for _, d := range instances {
+			allTimeTotal += brl
 			categoryTotals[fallback(e.Category, "Other")] += brl
 			nameTotals[e.Name] += brl
 			dayTotals[bucketKey(d, "day")] += brl
@@ -501,8 +545,9 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 		"largest_single":          largest,
 		"mom_delta_percent":       momPercent,
 		"top_5_current_month":     currentMonthInstances,
-		"budget_status":           budgetOut,
-		"current_month_total_brl": monthSpendThis,
+		"budget_status":            budgetOut,
+		"current_month_total_brl":  monthSpendThis,
+		"total_spent_all_time_brl": allTimeTotal,
 	})
 }
 

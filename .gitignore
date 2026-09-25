@@ -31,5 +31,9 @@ backend/*.db-shm
 backend/*.db.bak*
 backend/*.sqlite
 
+# --- Personal statement PDFs (never commit) ---
+*.pdf
+!**/fixtures/**/*.pdf
+
 # --- Outros ---
 frontend/yarn.lock

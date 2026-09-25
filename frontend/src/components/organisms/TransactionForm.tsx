@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useApp } from "@/contexts/AppContext";
+import { TransactionPreview } from "@/components/organisms/TransactionPreview";
 
 // 1. Define the Validation Schema (Zod)
 export const transactionFormSchema = z.object({
@@ -43,6 +45,8 @@ interface TransactionFormFieldsProps {
   onCancel?: () => void;
   submitLabel?: string;
   saving?: boolean;
+  /** When editing, exclude this id from position preview */
+  excludeTransactionId?: string;
 }
 
 export function TransactionFormFields({
@@ -51,7 +55,9 @@ export function TransactionFormFields({
   onCancel,
   submitLabel = "Save Transaction",
   saving = false,
+  excludeTransactionId,
 }: TransactionFormFieldsProps) {
+  const { transactions, dollarRate } = useApp();
   const form = useForm<TransactionFormValues>({
     // z.coerce.* gives the schema an `unknown` input type while its output
     // is the parsed value; the resolver from @hookform/resolvers v5 surfaces
@@ -217,6 +223,13 @@ export function TransactionFormFields({
               <FormMessage />
             </FormItem>
           )}
+        />
+
+        <TransactionPreview
+          control={form.control}
+          transactions={transactions}
+          dollarRate={dollarRate}
+          excludeTransactionId={excludeTransactionId}
         />
 
         <div className="flex justify-end gap-4 pt-4">
