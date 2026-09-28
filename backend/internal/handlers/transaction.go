@@ -138,18 +138,32 @@ func (h *TransactionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		// We continue; we just won't have price data
 	}
 
+	// 2b. Load the USD->BRL rate so we can convert a ticker's cached price
+	// (stored in the ticker's own currency) into each transaction's currency.
+	usdRate := 5.5
+	var usd models.Currency
+	if err := h.DB.First(&usd, "code = ?", "USD").Error; err == nil && usd.Rate > 0 {
+		usdRate = usd.Rate
+	}
+
 	// 3. Create a Lookup Map (O(M))
-	// This allows O(1) access time later
-	priceMap := make(map[string]float64)
+	// This allows O(1) access time later. We keep the whole ticker so we know
+	// the currency its cached price is denominated in.
+	tickerMap := make(map[string]models.Ticker)
 	for _, s := range stockPrices {
-		priceMap[s.Symbol] = s.Price
+		tickerMap[s.Symbol] = s
 	}
 
 	// 4. Merge Data (O(N))
 	var response []TransactionResponse
 	for _, t := range transactions {
 		// O(1) Lookup
-		currentPrice := priceMap[t.Symbol]
+		ticker := tickerMap[t.Symbol]
+
+		// Convert the cached price into the transaction's currency before doing
+		// any arithmetic. Otherwise a BTC price quoted in USD gets multiplied
+		// against a BRL cost basis with no conversion (the reported bug).
+		currentPrice := convertPrice(ticker.Price, ticker.Currency, t.Currency, usdRate)
 
 		// Calculate PnL
 		marketValue := 0.0

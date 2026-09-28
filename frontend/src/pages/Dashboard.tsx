@@ -6,6 +6,9 @@ import { ImportExcelDialog } from "@/components/organisms/ImportExcelDialog";
 import { GoalDialog } from "@/components/organisms/GoalDialog";
 import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDialog";
 import { TickerCard, type TickerData } from "@/components/organisms/TickerCard";
+import { PortfolioEvolutionChart } from "@/components/organisms/PortfolioEvolutionChart";
+import { GoalProgressCard } from "@/components/organisms/GoalProgressCard";
+import { Button } from "@/components/ui/button";
 import { useApp } from "@/contexts/AppContext";
 import { toast } from "sonner";
 
@@ -13,6 +16,7 @@ export default function DashboardPage() {
   const {
     transactions,
     stockPrices,
+    fixedBalances,
     loading,
     syncing,
     dollarRate,
@@ -25,8 +29,10 @@ export default function DashboardPage() {
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
+  const [goalReloadToken, setGoalReloadToken] = useState(0);
   const [allTransactionsDialogOpen, setAllTransactionsDialogOpen] =
     useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   // Portfolio treemap logic (from Portfolio.tsx)
   const tickers: TickerData[] = useMemo(() => {
@@ -34,6 +40,7 @@ export default function DashboardPage() {
     const categoryMap = new Map<string, string>();
     const currencyMap = new Map<string, string>();
     const dayChangeMap = new Map<string, number>();
+    const updatedAtMap = new Map<string, string>();
     for (const sp of stockPrices) {
       const tags = sp.tags
         ? sp.tags.split(",").filter((t) => t.trim() !== "")
@@ -42,6 +49,9 @@ export default function DashboardPage() {
       categoryMap.set(sp.symbol, sp.category || "");
       currencyMap.set(sp.symbol, sp.currency || "USD");
       dayChangeMap.set(sp.symbol, sp.day_change_percent ?? 0);
+      if (sp.updated_at) {
+        updatedAtMap.set(sp.symbol, sp.updated_at);
+      }
     }
 
     const map = new Map<
@@ -108,6 +118,7 @@ export default function DashboardPage() {
         tags: tagsMap.get(symbol) ?? [],
         category: categoryMap.get(symbol) ?? "",
         currency: "BRL",
+        updatedAt: updatedAtMap.get(symbol) ?? null,
       };
 
       if (currency === "USD") {
@@ -126,12 +137,50 @@ export default function DashboardPage() {
       result.push(tickerData);
     }
 
+    for (const fb of fixedBalances) {
+      const rate = fb.currency === "USD" ? dollarRate : 1;
+      result.push({
+        symbol: fb.name,
+        netQuantity: 1,
+        avgBuyPrice: fb.amount * rate,
+        currentPrice: fb.amount * rate,
+        dayChangePercent: 0,
+        totalValue: fb.amount * rate,
+        pnl: 0,
+        pnlPercent: 0,
+        tags: [],
+        category: fb.category || "FIXA",
+        currency: "BRL",
+        isFixed: true,
+        fixedBalanceId: fb.ID,
+      });
+    }
+
     return result.sort((a, b) => b.totalValue - a.totalValue);
-  }, [transactions, stockPrices, dollarRate]);
+  }, [transactions, stockPrices, fixedBalances, dollarRate]);
 
   const totalPortfolioValue = useMemo(() => {
     return tickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
   }, [tickers]);
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tickers) {
+      const cat =
+        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
+      set.add(cat);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tickers]);
+
+  const filteredTickers = useMemo(() => {
+    if (!categoryFilter) return tickers;
+    return tickers.filter((t) => {
+      const cat =
+        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
+      return cat === categoryFilter;
+    });
+  }, [tickers, categoryFilter]);
 
   const recentTransactions = useMemo(() => {
     return [...transactions]
@@ -173,14 +222,31 @@ export default function DashboardPage() {
       hideValues={hideValues}
       onToggleHideValues={toggleHideValues}
     >
+      <div className="mb-4">
+        <GoalProgressCard
+          transactions={transactions}
+          stockPrices={stockPrices}
+          fixedBalances={fixedBalances}
+          dollarRate={dollarRate}
+          hideValues={hideValues}
+          reloadToken={goalReloadToken}
+          onEditGoal={() => setGoalDialogOpen(true)}
+        />
+      </div>
+
       {/* Portfolio Summary */}
       <PortfolioSummary
         transactions={transactions}
         stockPrices={stockPrices}
+        fixedBalances={fixedBalances}
         dollarRate={dollarRate}
         dollarRateUpdatedAt={dollarRateUpdatedAt}
         hideValues={hideValues}
       />
+
+      <div className="mt-6">
+        <PortfolioEvolutionChart hideValues={hideValues} />
+      </div>
 
       {/* Portfolio Grid */}
       {tickers.length === 0 && !loading ? (
@@ -188,21 +254,52 @@ export default function DashboardPage() {
           No holdings found. Add some transactions first!
         </div>
       ) : (
-        <div className="mt-6 grid grid-cols-4 gap-4">
-          {tickers.map((ticker) => (
-            <TickerCard
-              key={ticker.symbol}
-              ticker={ticker}
-              onEdited={refreshData}
-              hideValues={hideValues}
-              portfolioPercent={
-                totalPortfolioValue > 0
-                  ? (Math.abs(ticker.totalValue) / totalPortfolioValue) * 100
-                  : 0
-              }
-              className="col-span-1"
-            />
-          ))}
+        <div className="mt-6 space-y-4">
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={categoryFilter === null ? "default" : "outline"}
+                onClick={() => setCategoryFilter(null)}
+              >
+                All
+              </Button>
+              {categories.map((cat) => (
+                <Button
+                  key={cat}
+                  type="button"
+                  size="sm"
+                  variant={categoryFilter === cat ? "default" : "outline"}
+                  onClick={() =>
+                    setCategoryFilter((prev) => (prev === cat ? null : cat))
+                  }
+                >
+                  {cat}
+                </Button>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-4">
+            {filteredTickers.map((ticker) => (
+              <TickerCard
+                key={
+                  ticker.isFixed
+                    ? `fixed-${ticker.fixedBalanceId}`
+                    : ticker.symbol
+                }
+                ticker={ticker}
+                onEdited={refreshData}
+                hideValues={hideValues}
+                portfolioPercent={
+                  totalPortfolioValue > 0
+                    ? (Math.abs(ticker.totalValue) / totalPortfolioValue) * 100
+                    : 0
+                }
+                className="col-span-1"
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -234,7 +331,15 @@ export default function DashboardPage() {
         onOpenChange={setImportDialogOpen}
         onImported={refreshData}
       />
-      <GoalDialog open={goalDialogOpen} onOpenChange={setGoalDialogOpen} />
+      <GoalDialog
+        open={goalDialogOpen}
+        onOpenChange={(open) => {
+          setGoalDialogOpen(open);
+          if (!open) {
+            setGoalReloadToken((n) => n + 1);
+          }
+        }}
+      />
       <AllTransactionsDialog
         open={allTransactionsDialogOpen}
         onOpenChange={setAllTransactionsDialogOpen}

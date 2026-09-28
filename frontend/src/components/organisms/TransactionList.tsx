@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
 import { EditTransactionDialog } from "@/components/organisms/EditTransactionDialog";
 import { type Transaction } from "@/types";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatQuantity } from "@/lib/format";
 import { MoreHorizontal, Trash, Edit } from "lucide-react";
 
 interface TransactionListProps {
@@ -107,7 +107,9 @@ export function TransactionList({
                     <TableCell className="text-muted-foreground">
                       {formatDate(t.date)}
                     </TableCell>
-                    <TableCell className="text-right">{t.quantity}</TableCell>
+                    <TableCell className="text-right">
+                      {formatQuantity(t.quantity)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(t.price, t.currency)}
                     </TableCell>

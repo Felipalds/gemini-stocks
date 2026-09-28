@@ -90,6 +90,7 @@ export function EditTransactionDialog({
           onCancel={() => onOpenChange(false)}
           submitLabel="Save Changes"
           saving={saving}
+          excludeTransactionId={transaction.ID}
         />
       </DialogContent>
     </Dialog>

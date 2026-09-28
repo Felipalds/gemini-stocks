@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { type Transaction } from "@/types";
+import { type FixedBalance, type Transaction } from "@/types";
 import { toast } from "sonner";
 
 export interface StockPriceInfo {
@@ -28,6 +28,7 @@ export interface CurrencyInfo {
 interface AppContextValue {
   transactions: Transaction[];
   stockPrices: StockPriceInfo[];
+  fixedBalances: FixedBalance[];
   loading: boolean;
   syncing: boolean;
   dollarRate: number;
@@ -36,13 +37,19 @@ interface AppContextValue {
   toggleHideValues: () => void;
   refreshData: () => void;
   syncPrices: () => Promise<void>;
+  /** Bumps after daily auto-snapshot attempt so evolution chart can reload */
+  snapshotEpoch: number;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+/** Shared across Strict Mode double-mounts so we only fire one POST per page load. */
+let dailySnapshotInflight: Promise<void> | null = null;
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stockPrices, setStockPrices] = useState<StockPriceInfo[]>([]);
+  const [fixedBalances, setFixedBalances] = useState<FixedBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [dollarRate, setDollarRate] = useState(5.5);
@@ -50,6 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [hideValues, setHideValues] = useState(false);
+  const [snapshotEpoch, setSnapshotEpoch] = useState(0);
 
   const refreshData = useCallback(() => {
     setLoading(true);
@@ -57,10 +65,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fetch("http://localhost:8080/transactions").then((r) => r.json()),
       fetch("http://localhost:8080/prices").then((r) => r.json()),
       fetch("http://localhost:8080/currencies/usd").then((r) => r.json()),
+      fetch("http://localhost:8080/fixed-balances").then((r) => r.json()),
     ])
-      .then(([txData, priceData, currencyData]) => {
+      .then(([txData, priceData, currencyData, fixedData]) => {
         setTransactions(txData || []);
         setStockPrices(priceData || []);
+        setFixedBalances(fixedData || []);
         if (currencyData && currencyData.rate) {
           setDollarRate(currencyData.rate);
           setDollarRateUpdatedAt(currencyData.updated_at || null);
@@ -70,10 +80,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  const ensureDailySnapshot = useCallback(() => {
+    if (!dailySnapshotInflight) {
+      dailySnapshotInflight = fetch("http://localhost:8080/snapshots", {
+        method: "POST",
+      })
+        .then((res) => {
+          if (!res.ok) {
+            console.error("Daily snapshot failed", res.status);
+            return;
+          }
+          setSnapshotEpoch((n) => n + 1);
+        })
+        .catch((err) => console.error("Daily snapshot error:", err))
+        .finally(() => {
+          // Keep the resolved promise so Strict Mode remounts reuse it
+          // instead of POSTing again in the same page lifetime.
+        });
+    }
+    return dailySnapshotInflight;
+  }, []);
+
   const syncPrices = useCallback(async () => {
     setSyncing(true);
     const toastId = toast.loading("Syncing prices...", {
-      description: "Fetching latest data from API.",
+      description: "Fetching latest data from API (skips symbols already updated today).",
     });
 
     try {
@@ -82,11 +113,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       if (res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          updated?: number;
+          skipped?: number;
+          failed?: number;
+          fx_updated?: number;
+          fx_skipped?: number;
+        } | null;
         refreshData();
-        toast.success("Prices Updated", {
-          id: toastId,
-          description: "Your portfolio values are now up to date.",
-        });
+        const updated = body?.updated ?? 0;
+        const skipped = body?.skipped ?? 0;
+        const failed = body?.failed ?? 0;
+        if (updated === 0 && skipped > 0 && failed === 0) {
+          toast.success("Already up to date", {
+            id: toastId,
+            description: `Skipped ${skipped} symbol(s) — Alpha is only called once per symbol per day.`,
+          });
+        } else {
+          toast.success("Prices Updated", {
+            id: toastId,
+            description: `Fetched ${updated}, skipped ${skipped}${failed ? `, failed ${failed}` : ""}.`,
+          });
+        }
       } else {
         toast.error("Update Failed", {
           id: toastId,
@@ -107,16 +155,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHideValues((v) => !v);
   }, []);
 
-  // Fetch once on mount
+  // Fetch once on mount + take at most one portfolio snapshot per day
   useEffect(() => {
     refreshData();
-  }, [refreshData]);
+    ensureDailySnapshot();
+  }, [refreshData, ensureDailySnapshot]);
 
   return (
     <AppContext.Provider
       value={{
         transactions,
         stockPrices,
+        fixedBalances,
         loading,
         syncing,
         dollarRate,
@@ -125,6 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleHideValues,
         refreshData,
         syncPrices,
+        snapshotEpoch,
       }}
     >
       {children}

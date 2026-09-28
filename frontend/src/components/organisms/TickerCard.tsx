@@ -4,8 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, TrendingDown, Pencil } from "lucide-react";
 import { EditTickerDialog } from "@/components/organisms/EditTickerDialog";
+import { EditFixedBalanceDialog } from "@/components/organisms/EditFixedBalanceDialog";
 import { StockDetailDialog } from "@/components/organisms/StockDetailDialog";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatQuantity } from "@/lib/format";
 
 export interface TickerData {
   symbol: string;
@@ -19,6 +20,10 @@ export interface TickerData {
   tags: string[];
   category: string;
   currency: string;
+  isFixed?: boolean;
+  fixedBalanceId?: string;
+  /** ISO timestamp from tickers.updated_at (price cache) */
+  updatedAt?: string | null;
   // Original currency values (for USD assets)
   originalCurrency?: string;
   avgBuyPriceOriginal?: number;
@@ -51,22 +56,38 @@ export function TickerCard({
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
   const fmtOriginal = (val: number) =>
     formatCurrency(val, ticker.originalCurrency || "USD");
+  const isFixed = !!ticker.isFixed;
   const isPositive = ticker.pnl >= 0;
   const hasOriginalCurrency = ticker.originalCurrency === "USD";
 
   // Scale opacity from 0.08 (0%) to 0.35 (>=20%) based on |pnlPercent|
   const intensity = Math.min(Math.abs(ticker.pnlPercent) / 20, 1);
-  const alpha = 0.08 + intensity * 0.27;
-  const bgColor = isPositive
-    ? `rgba(16, 185, 129, ${alpha})`
-    : `rgba(239, 68, 68, ${alpha})`;
+  const alpha = isFixed ? 0.1 : 0.08 + intensity * 0.27;
+  const bgColor = isFixed
+    ? `rgba(100, 116, 139, ${alpha})`
+    : isPositive
+      ? `rgba(16, 185, 129, ${alpha})`
+      : `rgba(239, 68, 68, ${alpha})`;
+  const borderClass = isFixed
+    ? "border-slate-500"
+    : isPositive
+      ? "border-emerald-600"
+      : "border-red-600";
+
+  const openEditor = () => setEditOpen(true);
 
   return (
     <>
       <Card
-        className={`border-2 overflow-hidden cursor-pointer ${isPositive ? "border-emerald-600" : "border-red-600"} ${className ?? ""}`}
+        className={`border-2 overflow-hidden cursor-pointer ${borderClass} ${className ?? ""}`}
         style={{ backgroundColor: bgColor }}
-        onClick={() => setDetailOpen(true)}
+        onClick={() => {
+          if (isFixed) {
+            openEditor();
+          } else {
+            setDetailOpen(true);
+          }
+        }}
       >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 px-3 pt-2">
           <div>
@@ -82,30 +103,32 @@ export function TickerCard({
             )}
           </div>
           <div className="flex items-center gap-1">
-            <Badge
-              variant={isPositive ? "default" : "destructive"}
-              className={`${compact ? "text-[10px] px-1.5 py-0" : ""} ${
-                isPositive
-                  ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-red-600 hover:bg-red-700"
-              }`}
-            >
-              {!compact &&
-                (isPositive ? (
-                  <TrendingUp className="mr-1 h-3 w-3" />
-                ) : (
-                  <TrendingDown className="mr-1 h-3 w-3" />
-                ))}
-              {isPositive ? "+" : ""}
-              {ticker.pnlPercent.toFixed(2)}%
-            </Badge>
+            {!isFixed && (
+              <Badge
+                variant={isPositive ? "default" : "destructive"}
+                className={`${compact ? "text-[10px] px-1.5 py-0" : ""} ${
+                  isPositive
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
+              >
+                {!compact &&
+                  (isPositive ? (
+                    <TrendingUp className="mr-1 h-3 w-3" />
+                  ) : (
+                    <TrendingDown className="mr-1 h-3 w-3" />
+                  ))}
+                {isPositive ? "+" : ""}
+                {ticker.pnlPercent.toFixed(2)}%
+              </Badge>
+            )}
             <Button
               variant="ghost"
               size="icon"
               className="h-6 w-6"
               onClick={(e) => {
                 e.stopPropagation();
-                setEditOpen(true);
+                openEditor();
               }}
             >
               <Pencil className="h-3 w-3" />
@@ -120,6 +143,7 @@ export function TickerCard({
               {hideValues ? HIDDEN : fmt(ticker.totalValue)}
             </div>
             {!compact &&
+              !isFixed &&
               hasOriginalCurrency &&
               ticker.totalValueOriginal !== undefined && (
                 <div className="text-xs text-muted-foreground">
@@ -127,11 +151,19 @@ export function TickerCard({
                 </div>
               )}
           </div>
-          {!compact && (
+          {!compact && isFixed && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              <span className="text-muted-foreground">Balance</span>
+              <span className="text-right font-medium">
+                {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+              </span>
+            </div>
+          )}
+          {!compact && !isFixed && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <span className="text-muted-foreground">Shares</span>
               <span className="text-right font-medium">
-                {hideValues ? HIDDEN : ticker.netQuantity}
+                {hideValues ? HIDDEN : formatQuantity(ticker.netQuantity)}
               </span>
 
               <span className="text-muted-foreground">Avg Buy Price</span>
@@ -172,7 +204,7 @@ export function TickerCard({
               </span>
             </div>
           )}
-          {compact && (
+          {compact && !isFixed && (
             <div
               className={`text-xs font-bold ${
                 hideValues
@@ -188,7 +220,7 @@ export function TickerCard({
             </div>
           )}
 
-          {!compact && ticker.tags.length > 0 && (
+          {!compact && !isFixed && ticker.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-1">
               {ticker.tags.map((tag) => (
                 <Badge key={tag} variant="outline" className="text-xs">
@@ -200,28 +232,42 @@ export function TickerCard({
         </CardContent>
       </Card>
 
-      <EditTickerDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        symbol={ticker.symbol}
-        currentPrice={ticker.currentPrice}
-        currentTags={ticker.tags}
-        currentCategory={ticker.category}
-        currentCurrency={ticker.currency}
-        onSaved={onEdited}
-      />
+      {isFixed && ticker.fixedBalanceId ? (
+        <EditFixedBalanceDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          id={ticker.fixedBalanceId}
+          name={ticker.symbol}
+          amount={ticker.totalValue}
+          onSaved={onEdited}
+        />
+      ) : (
+        <>
+          <EditTickerDialog
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            symbol={ticker.symbol}
+            currentPrice={ticker.currentPrice}
+            currentTags={ticker.tags}
+            currentCategory={ticker.category}
+            currentCurrency={ticker.currency}
+            onSaved={onEdited}
+          />
 
-      <StockDetailDialog
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        ticker={ticker}
-        portfolioPercent={portfolioPercent}
-        hideValues={hideValues}
-        onEdit={() => {
-          setDetailOpen(false);
-          setEditOpen(true);
-        }}
-      />
+          <StockDetailDialog
+            open={detailOpen}
+            onOpenChange={setDetailOpen}
+            ticker={ticker}
+            portfolioPercent={portfolioPercent}
+            hideValues={hideValues}
+            onEdit={() => {
+              setDetailOpen(false);
+              setEditOpen(true);
+            }}
+            onRefreshed={onEdited}
+          />
+        </>
+      )}
     </>
   );
 }

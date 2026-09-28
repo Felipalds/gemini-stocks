@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -7,9 +9,12 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Pencil } from "lucide-react";
+import { TrendingUp, TrendingDown, Pencil, RefreshCw, Plus } from "lucide-react";
 import { type TickerData } from "@/components/organisms/TickerCard";
-import { formatCurrency } from "@/lib/format";
+import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
+import { useApp } from "@/contexts/AppContext";
+import { formatCurrency, formatQuantity } from "@/lib/format";
+import { toast } from "sonner";
 
 interface StockDetailDialogProps {
   open: boolean;
@@ -18,9 +23,23 @@ interface StockDetailDialogProps {
   portfolioPercent: number;
   hideValues?: boolean;
   onEdit?: () => void;
+  onRefreshed?: () => void;
 }
 
 const HIDDEN = "••••••";
+
+function formatUpdatedAt(iso?: string | null): string {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function StockDetailDialog({
   open,
@@ -29,7 +48,9 @@ export function StockDetailDialog({
   portfolioPercent,
   hideValues,
   onEdit,
+  onRefreshed,
 }: StockDetailDialogProps) {
+  const [refreshing, setRefreshing] = useState(false);
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
   const isPositive = ticker.pnl >= 0;
 
@@ -44,6 +65,36 @@ export function StockDetailDialog({
   const b = Math.round(tint[2] * mix + base * (1 - mix));
   const bgColor = `rgb(${r}, ${g}, ${b})`;
 
+  const handleForceRefresh = async () => {
+    setRefreshing(true);
+    const toastId = toast.loading(`Updating ${ticker.symbol}...`, {
+      description: "Force refresh bypasses the once-per-day cache.",
+    });
+    try {
+      const res = await fetch(
+        `http://localhost:8080/prices/refresh-one?symbol=${encodeURIComponent(ticker.symbol)}`,
+        { method: "POST" },
+      );
+      if (res.ok) {
+        toast.success(`${ticker.symbol} updated`, {
+          id: toastId,
+          description: "Latest price fetched from Alpha Vantage.",
+        });
+        onRefreshed?.();
+      } else {
+        const text = await res.text();
+        toast.error("Update failed", {
+          id: toastId,
+          description: text || "Could not refresh this ticker.",
+        });
+      }
+    } catch {
+      toast.error("Connection error", { id: toastId });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -51,7 +102,7 @@ export function StockDetailDialog({
         style={{ backgroundColor: bgColor }}
       >
         <DialogHeader>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <DialogTitle className="text-3xl font-bold">
               {ticker.symbol}
             </DialogTitle>
@@ -77,12 +128,25 @@ export function StockDetailDialog({
                 Edit
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleForceRefresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw
+                className={`mr-1 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+              {refreshing ? "Updating..." : "Update price"}
+            </Button>
           </div>
           <DialogDescription>
             {ticker.category && <span>{ticker.category}</span>}
             {ticker.category && " · "}
             Portfolio weight:{" "}
             {hideValues ? HIDDEN : `${portfolioPercent.toFixed(2)}%`}
+            {" · "}
+            Last price update: {formatUpdatedAt(ticker.updatedAt)}
           </DialogDescription>
         </DialogHeader>
 
@@ -99,7 +163,7 @@ export function StockDetailDialog({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
             <DetailItem
               label="Shares"
-              value={hideValues ? HIDDEN : String(ticker.netQuantity)}
+              value={hideValues ? HIDDEN : formatQuantity(ticker.netQuantity)}
             />
             <DetailItem
               label="Avg Buy Price"
@@ -123,6 +187,10 @@ export function StockDetailDialog({
                     ? "text-emerald-600"
                     : "text-red-600"
               }
+            />
+            <DetailItem
+              label="Last Updated"
+              value={formatUpdatedAt(ticker.updatedAt)}
             />
           </div>
 
