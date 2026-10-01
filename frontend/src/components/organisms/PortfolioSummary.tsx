@@ -47,39 +47,48 @@ export function PortfolioSummary({
       categoryMap.set(sp.symbol, sp.category || "Other");
     }
 
+    // A single symbol can mix currencies (e.g. BTC/USD bought in both USD and
+    // BRL), so we normalize every transaction to BRL using ITS OWN currency
+    // rather than tagging the whole position with one currency.
     const symbolMap = new Map<
       string,
       {
         buyQuantity: number;
         sellQuantity: number;
-        totalBuyCost: number;
-        totalFees: number;
-        currentPrice: number;
-        currency: string;
+        totalBuyCostBrl: number;
+        totalFeesBrl: number;
+        currentPriceBrl: number;
+        currencies: Set<string>;
       }
     >();
 
     for (const t of transactions) {
+      const txCurrency = (t.currency || "USD").toUpperCase();
+      const rate = txCurrency === "USD" ? dollarRate : 1;
+
       const entry = symbolMap.get(t.symbol) ?? {
         buyQuantity: 0,
         sellQuantity: 0,
-        totalBuyCost: 0,
-        totalFees: 0,
-        currentPrice: t.current_price ?? 0,
-        currency: t.currency || "USD",
+        totalBuyCostBrl: 0,
+        totalFeesBrl: 0,
+        currentPriceBrl: 0,
+        currencies: new Set<string>(),
       };
+
+      entry.currencies.add(txCurrency);
 
       if (t.type === "BUY") {
         entry.buyQuantity += t.quantity;
-        entry.totalBuyCost += t.quantity * t.price;
+        entry.totalBuyCostBrl += t.quantity * t.price * rate;
       } else {
         entry.sellQuantity += t.quantity;
       }
 
-      entry.totalFees += t.fee || 0;
+      entry.totalFeesBrl += (t.fee || 0) * rate;
 
+      // Backend returns current_price in the transaction's own currency.
       if (t.current_price) {
-        entry.currentPrice = t.current_price;
+        entry.currentPriceBrl = t.current_price * rate;
       }
 
       symbolMap.set(t.symbol, entry);
@@ -94,21 +103,24 @@ export function PortfolioSummary({
 
     for (const [symbol, data] of symbolMap) {
       const netQuantity = data.buyQuantity - data.sellQuantity;
-      const value = netQuantity * data.currentPrice;
-      const avgBuyPrice =
-        data.buyQuantity > 0 ? data.totalBuyCost / data.buyQuantity : 0;
-      const costBasis = netQuantity * avgBuyPrice;
+      const valueBrl = netQuantity * data.currentPriceBrl;
+      const avgBuyPriceBrl =
+        data.buyQuantity > 0 ? data.totalBuyCostBrl / data.buyQuantity : 0;
+      const costBasisBrl = netQuantity * avgBuyPriceBrl;
 
-      if (data.currency === "BRL") {
-        brlValue += value;
-        brlCostBasis += costBasis + data.totalFees;
+      // Positions bought entirely in USD are reported in the USD bucket (values
+      // divided back out of BRL). Anything mixed (like BTC) is BRL-only.
+      const isUsdOnly =
+        data.currencies.size === 1 && data.currencies.has("USD");
+      if (isUsdOnly && dollarRate > 0) {
+        usdValue += valueBrl / dollarRate;
+        usdCostBasis += (costBasisBrl + data.totalFeesBrl) / dollarRate;
       } else {
-        usdValue += value;
-        usdCostBasis += costBasis + data.totalFees;
+        brlValue += valueBrl;
+        brlCostBasis += costBasisBrl + data.totalFeesBrl;
       }
 
-      const valueInBRL = data.currency === "BRL" ? value : value * dollarRate;
-      const absValue = Math.abs(valueInBRL);
+      const absValue = Math.abs(valueBrl);
 
       chartSlices.push({ name: symbol, value: absValue });
 

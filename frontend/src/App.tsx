@@ -11,6 +11,9 @@ function App() {
       <AppProvider>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          {/* Same dashboard; the :symbol param just drives which ticker's
+              detail dialog is open, so the URL reflects the opened square. */}
+          <Route path="/ticker/:symbol" element={<DashboardPage />} />
           <Route path="/add" element={<AddTransactionPage />} />
           <Route path="/expenses" element={<ExpensesPage />} />
         </Routes>

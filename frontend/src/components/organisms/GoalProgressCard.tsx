@@ -62,34 +62,34 @@ function categoryTotalsBRL(
     categoryMap.set(sp.symbol, sp.category || "Other");
   }
 
+  // A single symbol can mix currencies (e.g. BTC/USD bought in both USD and
+  // BRL), so every transaction is normalized to BRL using ITS OWN currency
+  // instead of tagging the whole position with the ticker's currency.
   const symbolMap = new Map<
     string,
     {
       buyQuantity: number;
       sellQuantity: number;
-      currentPrice: number;
-      currency: string;
+      currentPriceBrl: number;
     }
   >();
 
   for (const t of transactions) {
+    const txCurrency = (t.currency || "USD").toUpperCase();
+    const rate = txCurrency === "USD" ? dollarRate : 1;
     const entry = symbolMap.get(t.symbol) ?? {
       buyQuantity: 0,
       sellQuantity: 0,
-      currentPrice: t.current_price ?? 0,
-      currency: t.currency || "USD",
+      currentPriceBrl: 0,
     };
     if (t.type === "BUY") {
       entry.buyQuantity += t.quantity;
     } else {
       entry.sellQuantity += t.quantity;
     }
+    // Backend returns current_price in the transaction's own currency.
     if (t.current_price) {
-      entry.currentPrice = t.current_price;
-    }
-    const sp = stockPrices.find((p) => p.symbol === t.symbol);
-    if (sp?.currency) {
-      entry.currency = sp.currency;
+      entry.currentPriceBrl = t.current_price * rate;
     }
     symbolMap.set(t.symbol, entry);
   }
@@ -99,8 +99,7 @@ function categoryTotalsBRL(
 
   for (const [symbol, data] of symbolMap) {
     const net = data.buyQuantity - data.sellQuantity;
-    const value = net * data.currentPrice;
-    const valueBRL = data.currency === "BRL" ? value : value * dollarRate;
+    const valueBRL = net * data.currentPriceBrl;
     const abs = Math.abs(valueBRL);
     totalBRL += abs;
     const cat = categoryMap.get(symbol) || "Other";
