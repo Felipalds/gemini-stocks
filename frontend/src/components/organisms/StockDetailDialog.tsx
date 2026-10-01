@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,10 +8,9 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Pencil, RefreshCw, Plus } from "lucide-react";
+import { TrendingUp, TrendingDown, Pencil, RefreshCw } from "lucide-react";
 import { type TickerData } from "@/components/organisms/TickerCard";
-import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
-import { useApp } from "@/contexts/AppContext";
+import { TickerHistoryChart } from "@/components/organisms/TickerHistoryChart";
 import { formatCurrency, formatQuantity } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -78,7 +76,7 @@ export function StockDetailDialog({
       if (res.ok) {
         toast.success(`${ticker.symbol} updated`, {
           id: toastId,
-          description: "Latest price fetched from Alpha Vantage.",
+          description: "Latest price fetched from Yahoo Finance.",
         });
         onRefreshed?.();
       } else {
@@ -208,9 +206,14 @@ export function StockDetailDialog({
             </div>
           )}
 
-          {/* Placeholder for future chart */}
-          <div className="mt-10 border border-dashed border-muted-foreground/30 rounded-lg p-8 text-center text-muted-foreground">
-            Chart coming soon
+          {/* Price history chart, loaded inline while this dialog is open */}
+          <div className="mt-10">
+            <TickerHistoryChart
+              symbol={ticker.symbol}
+              currency={ticker.currency}
+              hideValues={hideValues}
+              active={open}
+            />
           </div>
         </div>
       </DialogContent>

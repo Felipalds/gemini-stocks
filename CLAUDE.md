@@ -14,7 +14,7 @@ There is no monorepo tooling; each side is built and run independently.
 ## Commands
 
 ### Backend (run from `backend/`)
-- Copy env: `cp .env.example .env` and fill in `ALPHA_API_KEY` before first run.
+- Copy env: `cp .env.example .env`. Price data comes from Yahoo Finance's free chart API — no API key required.
 - Run dev server: `go run ./cmd/api` (listens on `PORT`, default `8080`).
 - Build binary: `go build -o bin/api ./cmd/api`.
 - Tidy modules: `go mod tidy`.
@@ -35,7 +35,7 @@ The frontend talks to the backend at a **hardcoded** `http://localhost:8080` (se
 `cmd/api/main.go` is the composition root: it loads `.env`, opens the SQLite DB, runs `AutoMigrate` on all models, constructs services and handlers, and wires routes on a single Chi router with CORS open to all origins. Layering is:
 
 - `internal/models/` — GORM structs (`Transaction`, `Ticker`, `Currency`, `PortfolioGoal`/`GoalAllocation`). `Transaction.ID` is a UUID string assigned in a `BeforeCreate` hook; tickers are keyed by symbol; currencies by code (the only row in practice is `USD` → BRL rate).
-- `internal/services/finance.go` — `FinanceService` wraps the Alpha Vantage API. Two quirks live here: BRL symbols get a `.SAO` suffix appended, and crypto pairs like `BTC/USD` have the slash stripped before querying. Rate-limit responses are detected by scanning the `Information` field for "rate limit".
+- `internal/services/finance.go` — `FinanceService` wraps the Yahoo Finance v8 chart endpoint (`query1.finance.yahoo.com`, free, no key; a `Mozilla/5.0` User-Agent header is required or Yahoo answers 403). Symbol mapping lives in `buildYahooSymbol`: BRL stocks get a `.SA` suffix, crypto pairs like `BTC/USD` become `BTC-USD`. `GetExchangeRate` uses the `{FROM}{TO}=X` FX symbol (e.g. `USDBRL=X`); BTC has no direct BRL pair so it is derived via the USD cross (`BTC-USD` × `USDBRL=X`). Latest price and day-change come from the response `meta` (`regularMarketPrice`, `regularMarketChangePercent`).
 - `internal/handlers/` — one file per route group. Handlers own their `*gorm.DB` and call `FinanceService` directly.
 - `internal/database/db.go` — opens SQLite (path from `DB_NAME`, default `stocks.db`) and contains a one-time legacy rename of `stock_prices` → `tickers`. Leave that block alone unless you know no instance still has the old table.
 
@@ -61,4 +61,4 @@ Routes (all mounted at root, no `/api` prefix):
 ### Money and currency conventions
 - `Transaction.Currency` defaults to `USD` server-side if omitted.
 - The frontend assumes BRL as the display currency and converts USD positions via the cached USD→BRL rate from `/currencies/usd`. If a transaction is in BRL, do not double-convert.
-- Alpha Vantage's free tier rate-limits aggressively; the backend logs but does not retry. Manual `POST /prices/refresh` is the only refresh path — there is no scheduled background worker currently running despite what the README implies.
+- Yahoo's free endpoint is generous but unofficial; the backend logs errors but does not retry. Manual `POST /prices/refresh` is the only refresh path — there is no scheduled background worker currently running despite what the README implies.

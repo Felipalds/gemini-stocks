@@ -27,7 +27,7 @@ func NewPriceHandler(db *gorm.DB, logger *zap.SugaredLogger, finance *services.F
 }
 
 // updatedToday reports whether t falls on the current local calendar day.
-// Used to avoid spending Alpha Vantage credits on a second fetch the same day.
+// Used to avoid hammering Yahoo with a second fetch the same day.
 func updatedToday(t time.Time) bool {
 	if t.IsZero() {
 		return false
@@ -41,7 +41,7 @@ func updatedToday(t time.Time) bool {
 // RefreshPrices handles POST /prices/refresh
 // It iterates over all known stocks and updates their prices from the API
 // Also updates the USD/BRL exchange rate.
-// Tickers and FX rates already updated today (UpdatedAt) are skipped — at most one Alpha fetch per symbol/day.
+// Tickers and FX rates already updated today (UpdatedAt) are skipped — at most one Yahoo fetch per symbol/day.
 func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	h.Logger.Info("Starting manual price update...")
 
@@ -107,6 +107,10 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 
 		stock.Price = newTicker.Price
 		stock.DayChangePercent = newTicker.DayChangePercent
+		// Keep the stored currency in sync with the currency Yahoo quotes in.
+		if newTicker.Currency != "" {
+			stock.Currency = newTicker.Currency
+		}
 		stock.UpdatedAt = time.Now()
 		if err := h.DB.Save(&stock).Error; err != nil {
 			h.Logger.Warnf("Failed to save %s: %v", stock.Symbol, err)
@@ -126,12 +130,12 @@ func (h *PriceHandler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 		"failed":     failedCount,
 		"fx_updated": fxUpdated,
 		"fx_skipped": fxSkipped,
-		"message":    "Prices refreshed (same-day Alpha cache: at most one fetch per symbol per day)",
+		"message":    "Prices refreshed (same-day cache: at most one Yahoo fetch per symbol per day)",
 	})
 }
 
 // RefreshOne handles POST /prices/refresh-one?symbol=BTC/USD
-// Forces an Alpha fetch for a single ticker and bypasses the same-day cache.
+// Forces a Yahoo fetch for a single ticker and bypasses the same-day cache.
 // Symbol is a query param (not a path segment) so pairs like BTC/USD decode correctly
 // — Chi leaves %2F undecoded in path params, which broke DB lookup as "BTC%2FUSD".
 func (h *PriceHandler) RefreshOne(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +145,7 @@ func (h *PriceHandler) RefreshOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if models.IsLegacyFixedSymbol(symbol) {
-		http.Error(w, "Fixed balances are not priced via Alpha Vantage", http.StatusBadRequest)
+		http.Error(w, "Fixed balances are not priced via Yahoo Finance", http.StatusBadRequest)
 		return
 	}
 
@@ -155,12 +159,16 @@ func (h *PriceHandler) RefreshOne(w http.ResponseWriter, r *http.Request) {
 	newTicker, err := h.Finance.UpdateTickerFromAPI(stock.Symbol, stock.Currency)
 	if err != nil {
 		h.Logger.Warnf("Failed to force-refresh %s: %v", symbol, err)
-		http.Error(w, "Failed to fetch price from Alpha Vantage", http.StatusBadGateway)
+		http.Error(w, "Failed to fetch price from Yahoo Finance", http.StatusBadGateway)
 		return
 	}
 
 	stock.Price = newTicker.Price
 	stock.DayChangePercent = newTicker.DayChangePercent
+	// Keep the stored currency in sync with the currency Yahoo quotes in.
+	if newTicker.Currency != "" {
+		stock.Currency = newTicker.Currency
+	}
 	stock.UpdatedAt = time.Now()
 	if err := h.DB.Save(&stock).Error; err != nil {
 		h.Logger.Error("Failed to save forced price refresh", zap.Error(err))

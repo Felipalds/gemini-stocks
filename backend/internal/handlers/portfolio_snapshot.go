@@ -85,61 +85,73 @@ func (h *PortfolioSnapshotHandler) computeTotals() (portfolioTotals, error) {
 		return out, err
 	}
 
+	// A single symbol can mix currencies (e.g. BTC/USD bought in both USD and
+	// BRL), so every transaction is normalized to BRL using ITS OWN currency
+	// instead of tagging the whole position with one currency.
 	type agg struct {
-		buyQty, sellQty, buyCost, fees float64
-		currency                       string
+		buyQty, sellQty, buyCostBrl, feesBrl float64
+		currencies                           map[string]bool
 	}
 	bySymbol := map[string]*agg{}
 
 	for _, t := range txs {
 		a := bySymbol[t.Symbol]
 		if a == nil {
-			a = &agg{currency: t.Currency}
-			if a.currency == "" {
-				a.currency = "USD"
-			}
+			a = &agg{currencies: map[string]bool{}}
 			bySymbol[t.Symbol] = a
+		}
+		cur := t.Currency
+		if cur == "" {
+			cur = "USD"
+		}
+		a.currencies[cur] = true
+
+		txRate := 1.0
+		if cur != "BRL" {
+			txRate = rate
 		}
 		if t.Type == models.Buy {
 			a.buyQty += float64(t.Quantity)
-			a.buyCost += float64(t.Quantity) * float64(t.Price)
+			a.buyCostBrl += float64(t.Quantity) * float64(t.Price) * txRate
 		} else {
 			a.sellQty += float64(t.Quantity)
 		}
-		a.fees += t.Fee
+		a.feesBrl += t.Fee * txRate
 	}
 
 	var usdValue, brlValue, usdCost, brlCost float64
 	for symbol, a := range bySymbol {
 		net := a.buyQty - a.sellQty
-		// The position's currency is the transaction currency; convert the
-		// cached ticker price (in its own currency) into it before valuing.
-		currentPrice := 0.0
+		// Value the position in BRL: convert the cached ticker price (quoted in
+		// its own currency) straight into BRL.
+		currentPriceBrl := 0.0
 		if sp, ok := priceMap[symbol]; ok {
-			currentPrice = convertPrice(sp.Price, sp.Currency, a.currency, rate)
+			currentPriceBrl = convertPrice(sp.Price, sp.Currency, "BRL", rate)
 		}
-		value := net * currentPrice
-		avg := 0.0
+		valueBrl := net * currentPriceBrl
+		avgBrl := 0.0
 		if a.buyQty > 0 {
-			avg = a.buyCost / a.buyQty
+			avgBrl = a.buyCostBrl / a.buyQty
 		}
-		cost := net*avg + a.fees
+		costBrl := net*avgBrl + a.feesBrl
 		cat := ""
 		if sp, ok := priceMap[symbol]; ok {
 			cat = sp.Category
 		}
-		valueBRL := value
-		if a.currency != "BRL" {
-			usdValue += value
-			usdCost += cost
-			valueBRL = value * rate
+
+		// A position bought entirely in USD is reported in the USD bucket;
+		// anything mixed (e.g. BTC bought in both USD and BRL) is BRL-only.
+		usdOnly := len(a.currencies) == 1 && a.currencies["USD"]
+		if usdOnly && rate > 0 {
+			usdValue += valueBrl / rate
+			usdCost += costBrl / rate
 		} else {
-			brlValue += value
-			brlCost += cost
+			brlValue += valueBrl
+			brlCost += costBrl
 		}
 		out.Holdings = append(out.Holdings, snapshotHolding{
 			Symbol:   symbol,
-			ValueBRL: valueBRL,
+			ValueBRL: valueBrl,
 			Category: cat,
 			Kind:     "ticker",
 		})

@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.TickerHistory{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
@@ -66,6 +66,7 @@ func main() {
 	dataHandler := handlers.NewDataHandler(db, sugar)
 	transactionHandler := handlers.NewTransactionHandler(db, sugar, financeService)
 	priceHandler := handlers.NewPriceHandler(db, sugar, financeService)
+	tickerHistoryHandler := handlers.NewTickerHistoryHandler(db, sugar, financeService)
 	goalHandler := handlers.NewGoalHandler(db, sugar)
 	currencyHandler := handlers.NewCurrencyHandler(db, sugar, financeService)
 	expenseHandler := handlers.NewExpenseHandler(db, sugar)
@@ -102,6 +103,13 @@ func main() {
 		r.Post("/refresh", priceHandler.RefreshPrices)
 		r.Post("/refresh-one", priceHandler.RefreshOne)
 		r.Put("/", priceHandler.UpdatePrice)
+	})
+
+	r.Route("/tickers", func(r chi.Router) {
+		// Symbol is a query param (?symbol=BTC/USD), not a path segment, so pairs
+		// with a slash survive Chi's %2F handling — same pattern as /prices/refresh-one.
+		r.Get("/history", tickerHistoryHandler.GetHistory)
+		r.Post("/history/sync", tickerHistoryHandler.SyncHistory)
 	})
 
 	r.Route("/goal", func(r chi.Router) {
