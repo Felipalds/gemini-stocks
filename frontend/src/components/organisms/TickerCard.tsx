@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,8 +52,15 @@ export function TickerCard({
   compact,
   portfolioPercent = 0,
 }: TickerCardProps) {
+  const navigate = useNavigate();
+  const { symbol: routeSymbol } = useParams<{ symbol: string }>();
   const [editOpen, setEditOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // The detail dialog is open when the URL's /ticker/:symbol matches this card,
+  // so clicking a square just navigates and the URL reflects the opened square.
+  const detailOpen =
+    !ticker.isFixed &&
+    routeSymbol != null &&
+    decodeURIComponent(routeSymbol) === ticker.symbol;
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
   const fmtOriginal = (val: number) =>
     formatCurrency(val, ticker.originalCurrency || "USD");
@@ -85,7 +93,7 @@ export function TickerCard({
           if (isFixed) {
             openEditor();
           } else {
-            setDetailOpen(true);
+            navigate(`/ticker/${encodeURIComponent(ticker.symbol)}`);
           }
         }}
       >
@@ -256,12 +264,15 @@ export function TickerCard({
 
           <StockDetailDialog
             open={detailOpen}
-            onOpenChange={setDetailOpen}
+            onOpenChange={(o) => {
+              // Closing the dialog clears the /ticker/:symbol URL.
+              if (!o) navigate("/");
+            }}
             ticker={ticker}
             portfolioPercent={portfolioPercent}
             hideValues={hideValues}
             onEdit={() => {
-              setDetailOpen(false);
+              navigate("/");
               setEditOpen(true);
             }}
             onRefreshed={onEdited}
