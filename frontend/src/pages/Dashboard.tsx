@@ -7,9 +7,15 @@ import { GoalDialog } from "@/components/organisms/GoalDialog";
 import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDialog";
 import { TickerCard, type TickerData } from "@/components/organisms/TickerCard";
 import { PortfolioEvolutionChart } from "@/components/organisms/PortfolioEvolutionChart";
+import { PortfolioReconstructionChart } from "@/components/organisms/PortfolioReconstructionChart";
 import { GoalProgressCard } from "@/components/organisms/GoalProgressCard";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/contexts/AppContext";
+import {
+  ASSET_CLASSES,
+  classifyAssetClass,
+  type AssetClass,
+} from "@/lib/assetClass";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -32,7 +38,11 @@ export default function DashboardPage() {
   const [goalReloadToken, setGoalReloadToken] = useState(0);
   const [allTransactionsDialogOpen, setAllTransactionsDialogOpen] =
     useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  // Multi-select asset-class filter (BRA / USA / CRYPTO / FIXA). Drives both the
+  // squares below and the Total Portfolio summary. Starts with everything shown.
+  const [assetFilter, setAssetFilter] = useState<Set<AssetClass>>(
+    () => new Set(ASSET_CLASSES),
+  );
 
   // Portfolio treemap logic (from Portfolio.tsx)
   const tickers: TickerData[] = useMemo(() => {
@@ -183,28 +193,48 @@ export default function DashboardPage() {
     return result.sort((a, b) => b.totalValue - a.totalValue);
   }, [transactions, stockPrices, fixedBalances, dollarRate]);
 
+  // Asset classes actually present in the portfolio, in canonical order, so we
+  // only render filter buttons that mean something.
+  const presentClasses = useMemo(() => {
+    const present = new Set<AssetClass>();
+    for (const t of tickers)
+      present.add(
+        classifyAssetClass({
+          symbol: t.symbol,
+          isFixed: t.isFixed,
+          isUsdOnly: t.originalCurrency === "USD",
+        }),
+      );
+    return ASSET_CLASSES.filter((c) => present.has(c));
+  }, [tickers]);
+
+  const filteredTickers = useMemo(
+    () =>
+      tickers.filter((t) =>
+        assetFilter.has(
+          classifyAssetClass({
+            symbol: t.symbol,
+            isFixed: t.isFixed,
+            isUsdOnly: t.originalCurrency === "USD",
+          }),
+        ),
+      ),
+    [tickers, assetFilter],
+  );
+
+  // Square weights are relative to what's currently shown.
   const totalPortfolioValue = useMemo(() => {
-    return tickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
-  }, [tickers]);
+    return filteredTickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
+  }, [filteredTickers]);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of tickers) {
-      const cat =
-        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
-      set.add(cat);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [tickers]);
-
-  const filteredTickers = useMemo(() => {
-    if (!categoryFilter) return tickers;
-    return tickers.filter((t) => {
-      const cat =
-        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
-      return cat === categoryFilter;
+  const allSelected = presentClasses.every((c) => assetFilter.has(c));
+  const toggleClass = (c: AssetClass) =>
+    setAssetFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
     });
-  }, [tickers, categoryFilter]);
 
   const recentTransactions = useMemo(() => {
     return [...transactions]
@@ -266,10 +296,15 @@ export default function DashboardPage() {
         dollarRate={dollarRate}
         dollarRateUpdatedAt={dollarRateUpdatedAt}
         hideValues={hideValues}
+        assetFilter={assetFilter}
       />
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
         <PortfolioEvolutionChart hideValues={hideValues} />
+        <PortfolioReconstructionChart
+          hideValues={hideValues}
+          assetFilter={assetFilter}
+        />
       </div>
 
       {/* Portfolio Grid */}
@@ -279,27 +314,25 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="mt-6 space-y-4">
-          {categories.length > 0 && (
+          {presentClasses.length > 0 && (
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant={categoryFilter === null ? "default" : "outline"}
-                onClick={() => setCategoryFilter(null)}
+                variant={allSelected ? "default" : "outline"}
+                onClick={() => setAssetFilter(new Set(presentClasses))}
               >
                 All
               </Button>
-              {categories.map((cat) => (
+              {presentClasses.map((cls) => (
                 <Button
-                  key={cat}
+                  key={cls}
                   type="button"
                   size="sm"
-                  variant={categoryFilter === cat ? "default" : "outline"}
-                  onClick={() =>
-                    setCategoryFilter((prev) => (prev === cat ? null : cat))
-                  }
+                  variant={assetFilter.has(cls) ? "default" : "outline"}
+                  onClick={() => toggleClass(cls)}
                 >
-                  {cat}
+                  {cls}
                 </Button>
               ))}
             </div>

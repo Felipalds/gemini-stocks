@@ -5,6 +5,7 @@ import { type FixedBalance, type Transaction } from "@/types";
 import { type StockPriceInfo } from "@/contexts/AppContext";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { classifyAssetClass, type AssetClass } from "@/lib/assetClass";
 import {
   PortfolioPieChart,
   type PieSlice,
@@ -18,6 +19,8 @@ interface PortfolioSummaryProps {
   dollarRate: number;
   dollarRateUpdatedAt?: string | null;
   hideValues?: boolean;
+  /** Only holdings whose asset class is in this set count toward the total/charts. */
+  assetFilter: Set<AssetClass>;
 }
 
 const HIDDEN = "••••••";
@@ -29,6 +32,7 @@ export function PortfolioSummary({
   dollarRate,
   dollarRateUpdatedAt,
   hideValues,
+  assetFilter,
 }: PortfolioSummaryProps) {
   const [expanded, setExpanded] = useState(false);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
@@ -102,6 +106,12 @@ export function PortfolioSummary({
     const catTotals = new Map<string, number>();
 
     for (const [symbol, data] of symbolMap) {
+      const category = categoryMap.get(symbol) || "Other";
+      const isUsdOnly =
+        data.currencies.size === 1 && data.currencies.has("USD");
+      const assetClass = classifyAssetClass({ symbol, isUsdOnly });
+      if (!assetFilter.has(assetClass)) continue;
+
       const netQuantity = data.buyQuantity - data.sellQuantity;
       const valueBrl = netQuantity * data.currentPriceBrl;
       const avgBuyPriceBrl =
@@ -110,8 +120,6 @@ export function PortfolioSummary({
 
       // Positions bought entirely in USD are reported in the USD bucket (values
       // divided back out of BRL). Anything mixed (like BTC) is BRL-only.
-      const isUsdOnly =
-        data.currencies.size === 1 && data.currencies.has("USD");
       if (isUsdOnly && dollarRate > 0) {
         usdValue += valueBrl / dollarRate;
         usdCostBasis += (costBasisBrl + data.totalFeesBrl) / dollarRate;
@@ -124,11 +132,13 @@ export function PortfolioSummary({
 
       chartSlices.push({ name: symbol, value: absValue });
 
-      const category = categoryMap.get(symbol) || "Other";
       catTotals.set(category, (catTotals.get(category) || 0) + absValue);
     }
 
     for (const fb of fixedBalances) {
+      if (!assetFilter.has("FIXA")) continue;
+      const category = fb.category || "FIXA";
+
       const amount = fb.amount || 0;
       const currency = fb.currency || "BRL";
       if (currency === "BRL") {
@@ -143,7 +153,6 @@ export function PortfolioSummary({
       const absValue = Math.abs(valueInBRL);
       chartSlices.push({ name: fb.name, value: absValue });
 
-      const category = fb.category || "FIXA";
       catTotals.set(category, (catTotals.get(category) || 0) + absValue);
     }
 
@@ -161,7 +170,7 @@ export function PortfolioSummary({
       assetSlices: chartSlices,
       categorySlices: catSlices,
     };
-  }, [transactions, stockPrices, fixedBalances, dollarRate]);
+  }, [transactions, stockPrices, fixedBalances, dollarRate, assetFilter]);
 
   const totalInBRL = totalBRL + totalUSD * dollarRate;
   const totalPnlInBRL = totalPnlBRL + totalPnlUSD * dollarRate;

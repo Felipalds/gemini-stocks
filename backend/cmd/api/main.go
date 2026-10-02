@@ -74,6 +74,7 @@ func main() {
 	expenseCategoryHandler := handlers.NewExpenseCategoryHandler(db, sugar)
 	fixedBalanceHandler := handlers.NewFixedBalanceHandler(db, sugar)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(db, sugar)
+	portfolioHistoryHandler := handlers.NewPortfolioHistoryHandler(db, sugar, financeService)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -162,6 +163,11 @@ func main() {
 		r.Get("/", snapshotHandler.List)
 		r.Post("/", snapshotHandler.Create)
 		r.Delete("/{id}", snapshotHandler.Delete)
+	})
+
+	r.Route("/portfolio", func(r chi.Router) {
+		r.Get("/history", portfolioHistoryHandler.GetHistory)
+		r.Post("/history/backfill", portfolioHistoryHandler.Backfill)
 	})
 
 	// 6. Start Server
