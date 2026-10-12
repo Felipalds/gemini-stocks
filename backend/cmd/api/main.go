@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.TickerHistory{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.TickerHistory{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}, &models.Dividend{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
@@ -75,6 +75,7 @@ func main() {
 	fixedBalanceHandler := handlers.NewFixedBalanceHandler(db, sugar)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(db, sugar)
 	portfolioHistoryHandler := handlers.NewPortfolioHistoryHandler(db, sugar, financeService)
+	dividendHandler := handlers.NewDividendHandler(db, sugar, financeService)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -163,6 +164,16 @@ func main() {
 		r.Get("/", snapshotHandler.List)
 		r.Post("/", snapshotHandler.Create)
 		r.Delete("/{id}", snapshotHandler.Delete)
+	})
+
+	r.Route("/dividends", func(r chi.Router) {
+		r.Get("/", dividendHandler.List)
+		r.Post("/", dividendHandler.Create)
+		r.Get("/summary", dividendHandler.Summary)
+		r.Get("/sync/preview", dividendHandler.SyncPreview)
+		r.Post("/sync", dividendHandler.SyncConfirm)
+		r.Put("/{id}", dividendHandler.Update)
+		r.Delete("/{id}", dividendHandler.Delete)
 	})
 
 	r.Route("/portfolio", func(r chi.Router) {

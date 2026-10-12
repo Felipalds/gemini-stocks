@@ -130,7 +130,7 @@ export function GoalProgressCard({
 }: GoalProgressCardProps) {
   const [goal, setGoal] = useState<PortfolioGoal | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const loadGoal = useCallback(() => {
     setLoading(true);

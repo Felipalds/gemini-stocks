@@ -34,7 +34,7 @@ export function PortfolioSummary({
   hideValues,
   assetFilter,
 }: PortfolioSummaryProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 

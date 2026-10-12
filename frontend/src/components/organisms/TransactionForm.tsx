@@ -57,7 +57,12 @@ export function TransactionFormFields({
   saving = false,
   excludeTransactionId,
 }: TransactionFormFieldsProps) {
-  const { transactions, dollarRate } = useApp();
+  const { transactions, dollarRate, stockPrices } = useApp();
+  // Known tickers for quick selection; free-text is still allowed since the
+  // backend lazily creates a ticker for any unknown symbol on a transaction.
+  const knownSymbols = Array.from(
+    new Set(stockPrices.map((s) => s.symbol)),
+  ).sort();
   const form = useForm<TransactionFormValues>({
     // z.coerce.* gives the schema an `unknown` input type while its output
     // is the parsed value; the resolver from @hookform/resolvers v5 surfaces
@@ -88,8 +93,17 @@ export function TransactionFormFields({
               <FormItem>
                 <FormLabel>Ticker Symbol</FormLabel>
                 <FormControl>
-                  <Input placeholder="AAPL" {...field} />
+                  <Input
+                    placeholder="AAPL"
+                    list="known-tickers"
+                    {...field}
+                  />
                 </FormControl>
+                <datalist id="known-tickers">
+                  {knownSymbols.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
                 <FormMessage />
               </FormItem>
             )}

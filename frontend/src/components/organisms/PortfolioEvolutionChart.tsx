@@ -28,7 +28,7 @@ export function PortfolioEvolutionChart({
   const { snapshotEpoch, takeSnapshot, takingSnapshot } = useApp();
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const load = useCallback(() => {
     setLoading(true);

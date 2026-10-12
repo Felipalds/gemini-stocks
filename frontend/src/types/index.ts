@@ -151,6 +151,55 @@ export interface PortfolioSnapshot {
   CreatedAt: string;
 }
 
+export type DividendKind = "dividend" | "jcp" | "profit";
+
+export interface Dividend {
+  ID: string;
+  symbol: string;
+  kind: DividendKind;
+  amount: number;
+  /** Tax paid on this income event, in the same currency as `amount`. */
+  tax?: number;
+  currency: string;
+  /** USD→BRL rate entered manually at record time; used to convert USD amounts. */
+  dollar_rate?: number;
+  date: string;
+  note: string;
+  value_brl?: number;
+  /** "manual" (default) or "yahoo" when imported by the sync. */
+  source?: string;
+}
+
+/** A computed, not-yet-saved dividend proposed by the Yahoo sync preview. */
+export interface DividendCandidate {
+  symbol: string;
+  kind: DividendKind;
+  date: string;
+  per_share: number;
+  shares: number;
+  amount: number;
+  currency: string;
+  dollar_rate: number;
+  value_brl: number;
+  /** "new" or "probably_added" (a similar entry already exists). */
+  status: "new" | "probably_added";
+  note: string;
+}
+
+export interface TickerDividendBucket {
+  symbol: string;
+  count: number;
+  total_brl: number;
+}
+
+export interface DividendSummary {
+  total_brl: number;
+  count: number;
+  by_ticker: TickerDividendBucket[];
+  by_year: AnalyticsBucket[];
+  by_month: AnalyticsBucket[];
+}
+
 export interface GoalAllocation {
   category: string;
   percentage: number;

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -203,6 +204,91 @@ func (s *FinanceService) FetchMonthlyHistory(symbol string, currency string) ([]
 		})
 	}
 	return history, nil
+}
+
+// yahooEventsResponse captures the dividend events returned by the chart endpoint
+// when called with ?events=div.
+type yahooEventsResponse struct {
+	Chart struct {
+		Result []struct {
+			Meta struct {
+				Currency string `json:"currency"`
+			} `json:"meta"`
+			Events struct {
+				Dividends map[string]struct {
+					Amount float64 `json:"amount"`
+					Date   int64   `json:"date"`
+				} `json:"dividends"`
+			} `json:"events"`
+		} `json:"result"`
+		Error *struct {
+			Code        string `json:"code"`
+			Description string `json:"description"`
+		} `json:"error"`
+	} `json:"chart"`
+}
+
+// DividendEvent is one dividend payment reported by Yahoo: the per-share amount
+// on its ex-dividend date, in the stock's native currency.
+type DividendEvent struct {
+	Date     time.Time
+	PerShare float64
+	Currency string
+}
+
+// FetchDividends pulls the full dividend-per-share history for a ticker from
+// Yahoo (one call returns the entire series, native currency). The caller
+// combines these with the user's share count at each ex-date to compute the
+// amount actually received.
+func (s *FinanceService) FetchDividends(symbol string, currency string) ([]DividendEvent, error) {
+	yahooSymbol := buildYahooSymbol(symbol, currency)
+	url := fmt.Sprintf("%s/v8/finance/chart/%s?interval=1d&range=max&events=div", s.baseURL, yahooSymbol)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("rate limit exceeded for %s", yahooSymbol)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Yahoo returned status %d for %s", resp.StatusCode, yahooSymbol)
+	}
+
+	var data yahooEventsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	if data.Chart.Error != nil {
+		return nil, fmt.Errorf("Yahoo error for %s: %s", yahooSymbol, data.Chart.Error.Description)
+	}
+	if len(data.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no data returned for %s", yahooSymbol)
+	}
+
+	res := data.Chart.Result[0]
+	quoteCurrency := res.Meta.Currency
+	events := make([]DividendEvent, 0, len(res.Events.Dividends))
+	for _, d := range res.Events.Dividends {
+		if d.Amount <= 0 {
+			continue
+		}
+		events = append(events, DividendEvent{
+			Date:     time.Unix(d.Date, 0).UTC(),
+			PerShare: d.Amount,
+			Currency: quoteCurrency,
+		})
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].Date.Before(events[j].Date) })
+	return events, nil
 }
 
 // UpdateTickerFromAPI updates some infos about the ticker

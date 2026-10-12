@@ -8,6 +8,7 @@ import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDia
 import { TickerCard, type TickerData } from "@/components/organisms/TickerCard";
 import { PortfolioEvolutionChart } from "@/components/organisms/PortfolioEvolutionChart";
 import { PortfolioReconstructionChart } from "@/components/organisms/PortfolioReconstructionChart";
+import { DividendsOverview } from "@/components/organisms/DividendsOverview";
 import { GoalProgressCard } from "@/components/organisms/GoalProgressCard";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/contexts/AppContext";
@@ -299,6 +300,11 @@ export default function DashboardPage() {
         assetFilter={assetFilter}
       />
 
+      {/* Dividends quick view: total + per-ticker pie + cumulative line */}
+      <div className="mt-6">
+        <DividendsOverview hideValues={hideValues} />
+      </div>
+
       <div className="mt-6 space-y-6">
         <PortfolioEvolutionChart hideValues={hideValues} />
         <PortfolioReconstructionChart
@@ -377,8 +383,13 @@ export default function DashboardPage() {
           onEdited={refreshData}
         />
         {transactions.length > 5 && (
-          <div className="text-center mt-4 text-sm text-muted-foreground">
-            Click "All Transactions" in the header to view all
+          <div className="text-center mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setAllTransactionsDialogOpen(true)}
+            >
+              See All Transactions
+            </Button>
           </div>
         )}
       </div>
