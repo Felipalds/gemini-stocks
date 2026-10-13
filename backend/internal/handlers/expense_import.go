@@ -112,19 +112,21 @@ func (h *ExpenseHandler) ImportPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 type importConfirmItem struct {
-	Name          string  `json:"name"`
-	OriginalName  string  `json:"original_name"`
-	Category      string  `json:"category"`
-	Date          string  `json:"date"`
-	Value         float64 `json:"value"`
-	Currency      string  `json:"currency"`
-	Bank          string  `json:"bank"`
-	PaymentType   string  `json:"payment_type"`
-	ExternalKey   string  `json:"external_key"`
-	InstallmentN  int     `json:"installment_n"`
-	InstallmentOf int     `json:"installment_of"`
-	Note          string  `json:"note"`
-	SaveAlias     *bool   `json:"save_alias"`
+	Name             string  `json:"name"`
+	OriginalName     string  `json:"original_name"`
+	Category         string  `json:"category"`
+	Origin           string  `json:"origin"`
+	Date             string  `json:"date"`
+	Value            float64 `json:"value"`
+	Currency         string  `json:"currency"`
+	Bank             string  `json:"bank"`
+	PaymentType      string  `json:"payment_type"`
+	ExternalKey      string  `json:"external_key"`
+	InstallmentN     int     `json:"installment_n"`
+	InstallmentOf    int     `json:"installment_of"`
+	InstallmentGroup string  `json:"installment_group"`
+	Note             string  `json:"note"`
+	SaveAlias        *bool   `json:"save_alias"`
 }
 
 type importConfirmRequest struct {
@@ -194,17 +196,21 @@ func (h *ExpenseHandler) ImportConfirm(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := models.Expense{
-			Name:          item.Name,
-			Category:      category,
-			Value:         item.Value,
-			Currency:      currency,
-			Date:          date,
-			Note:          item.Note,
-			Recurring:     models.RecurringNone,
-			Bank:          bank,
-			PaymentType:   paymentType,
-			ImportBatchID: batchID,
-			ExternalKey:   item.ExternalKey,
+			Name:             item.Name,
+			Category:         category,
+			Value:            item.Value,
+			Currency:         currency,
+			Date:             date,
+			Note:             item.Note,
+			Recurring:        models.RecurringNone,
+			Bank:             bank,
+			PaymentType:      paymentType,
+			Origin:           strings.TrimSpace(item.Origin),
+			ImportBatchID:    batchID,
+			ExternalKey:      item.ExternalKey,
+			InstallmentN:     item.InstallmentN,
+			InstallmentOf:    item.InstallmentOf,
+			InstallmentGroup: item.InstallmentGroup,
 		}
 		if err := h.DB.Create(&e).Error; err != nil {
 			h.Logger.Error("Failed to import expense", zap.Error(err))

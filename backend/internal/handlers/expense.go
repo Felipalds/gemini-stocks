@@ -114,15 +114,68 @@ func (h *ExpenseHandler) List(w http.ResponseWriter, r *http.Request) {
 		pageSize = 25
 	}
 
+	// Optional drill-down filters: category (as shown in analytics, where empty
+	// categories read as "Other"), a single calendar month (YYYY-MM), and/or an
+	// explicit date range (from/to as YYYY-MM-DD). Range takes precedence when both
+	// a month and a range are supplied.
+	category := r.URL.Query().Get("category")
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	var rangeStart, rangeEnd time.Time
+	if m := r.URL.Query().Get("month"); m != "" {
+		parsed, err := time.ParseInLocation("2006-01", m, time.Local)
+		if err != nil {
+			http.Error(w, "Invalid `month` (expected YYYY-MM)", http.StatusBadRequest)
+			return
+		}
+		rangeStart = time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, time.Local)
+		rangeEnd = rangeStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+	}
+	if f := r.URL.Query().Get("from"); f != "" {
+		parsed, err := parseDateParam(f)
+		if err != nil {
+			http.Error(w, "Invalid `from` (expected YYYY-MM-DD)", http.StatusBadRequest)
+			return
+		}
+		rangeStart = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local)
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		parsed, err := parseDateParam(t)
+		if err != nil {
+			http.Error(w, "Invalid `to` (expected YYYY-MM-DD)", http.StatusBadRequest)
+			return
+		}
+		rangeEnd = endOfDay(parsed)
+	}
+
+	filtered := func() *gorm.DB {
+		q := h.DB.Model(&models.Expense{})
+		if category == "Other" {
+			q = q.Where("category = '' OR category = 'Other'")
+		} else if category != "" {
+			q = q.Where("category = ?", category)
+		}
+		if !rangeStart.IsZero() {
+			q = q.Where("date >= ?", rangeStart)
+		}
+		if !rangeEnd.IsZero() {
+			q = q.Where("date <= ?", rangeEnd)
+		}
+		if search != "" {
+			like := "%" + search + "%"
+			q = q.Where("name LIKE ? OR category LIKE ?", like, like)
+		}
+		return q
+	}
+
 	var total int64
-	if err := h.DB.Model(&models.Expense{}).Count(&total).Error; err != nil {
+	if err := filtered().Count(&total).Error; err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
 	var rows []models.Expense
 	// Newest expenses first (statement date, then insert time as tiebreaker).
-	if err := h.DB.
+	if err := filtered().
 		Order("expenses.date DESC, expenses.created_at DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
@@ -423,24 +476,63 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	startOfThisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	startOfLastMonth := startOfThisMonth.AddDate(0, -1, 0)
-	endOfLastMonth := startOfThisMonth.Add(-time.Nanosecond)
-	last30Start := now.AddDate(0, 0, -30)
-	last12mStart := time.Date(now.Year()-1, now.Month(), 1, 0, 0, 0, 0, now.Location())
+	loc := now.Location()
 
-	categoryTotals := map[string]float64{}
+	// The overview cards, charts and breakdowns are scoped to a selectable
+	// period given as ?from=YYYY-MM-DD&to=YYYY-MM-DD. Empty `from` means all time
+	// (no lower bound); empty `to` means up to now. All-time totals ("total
+	// spent", "largest ever") ignore the period.
+	from, err := parseDateParam(r.URL.Query().Get("from"))
+	if err != nil {
+		http.Error(w, "Invalid `from` (expected YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+	to, err := parseDateParam(r.URL.Query().Get("to"))
+	if err != nil {
+		http.Error(w, "Invalid `to` (expected YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+	periodEnd := now
+	if !to.IsZero() {
+		periodEnd = endOfDay(to)
+	}
+	bounded := !from.IsZero()
+	var periodStart time.Time
+	if bounded {
+		periodStart = time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, loc)
+	}
+
+	// Previous equal-length window, for the period-over-period delta. Only
+	// meaningful for a bounded range.
+	var prevStart, prevEnd time.Time
+	if bounded {
+		length := periodEnd.Sub(periodStart)
+		prevEnd = periodStart.Add(-time.Nanosecond)
+		prevStart = periodStart.Add(-length)
+	}
+
+	// Expand recurrences to whichever is later, now or periodEnd, so all-time
+	// totals stay correct even when the period ends in the past.
+	expandTo := periodEnd
+	if now.After(expandTo) {
+		expandTo = now
+	}
+
+	inPeriod := func(d time.Time) bool {
+		if bounded && d.Before(periodStart) {
+			return false
+		}
+		return !d.After(periodEnd)
+	}
+
+	categoryPeriod := map[string]float64{}
 	nameTotals := map[string]float64{}
 	dayTotals := map[string]float64{}
 	monthTotals := map[string]float64{}
-	yearTotals := map[string]float64{}
-	category30d := map[string]float64{}
-	monthSpendThis := 0.0
-	monthSpendLast := 0.0
-	last30Total := 0.0
-	last12mTotal := 0.0
+	periodTotal := 0.0
+	prevTotal := 0.0
 	allTimeTotal := 0.0
-	categorySpendThisMonth := map[string]float64{}
+	var minDate time.Time
 
 	type singleInstance struct {
 		Name     string    `json:"name"`
@@ -448,61 +540,79 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 		Date     time.Time `json:"date"`
 		ValueBRL float64   `json:"value_brl"`
 	}
-	var largest singleInstance
-	currentMonthInstances := []singleInstance{}
+	var largestAll singleInstance
+	var largestPeriod singleInstance
+	periodInstances := []singleInstance{}
 
 	for _, e := range expenses {
 		brl := toBRL(e.Value, e.Currency, rates)
-		instances := expandRecurringDates(e.Date, e.Recurring, time.Time{}, now)
-		for _, d := range instances {
+		for _, d := range expandRecurringDates(e.Date, e.Recurring, time.Time{}, expandTo) {
 			allTimeTotal += brl
-			categoryTotals[fallback(e.Category, "Other")] += brl
-			nameTotals[e.Name] += brl
-			dayTotals[bucketKey(d, "day")] += brl
-			monthTotals[bucketKey(d, "month")] += brl
-			yearTotals[bucketKey(d, "year")] += brl
-
-			if !d.Before(last30Start) {
-				category30d[fallback(e.Category, "Other")] += brl
-				last30Total += brl
+			if minDate.IsZero() || d.Before(minDate) {
+				minDate = d
 			}
-			if !d.Before(last12mStart) {
-				last12mTotal += brl
+			if brl > largestAll.ValueBRL {
+				largestAll = singleInstance{Name: e.Name, Category: e.Category, Date: d, ValueBRL: brl}
 			}
-			if !d.Before(startOfThisMonth) {
-				monthSpendThis += brl
-				categorySpendThisMonth[fallback(e.Category, "Other")] += brl
-				currentMonthInstances = append(currentMonthInstances, singleInstance{
+			if inPeriod(d) {
+				cat := fallback(e.Category, "Other")
+				periodTotal += brl
+				categoryPeriod[cat] += brl
+				nameTotals[e.Name] += brl
+				dayTotals[bucketKey(d, "day")] += brl
+				monthTotals[bucketKey(d, "month")] += brl
+				periodInstances = append(periodInstances, singleInstance{
 					Name:     e.Name,
 					Category: e.Category,
 					Date:     d,
 					ValueBRL: brl,
 				})
-			} else if !d.Before(startOfLastMonth) && !d.After(endOfLastMonth) {
-				monthSpendLast += brl
+				if brl > largestPeriod.ValueBRL {
+					largestPeriod = singleInstance{Name: e.Name, Category: e.Category, Date: d, ValueBRL: brl}
+				}
 			}
-			if brl > largest.ValueBRL {
-				largest = singleInstance{Name: e.Name, Category: e.Category, Date: d, ValueBRL: brl}
+			if bounded && !d.Before(prevStart) && !d.After(prevEnd) {
+				prevTotal += brl
 			}
 		}
 	}
 
-	// MoM delta as percent change from last month to this month.
-	var momPercent *float64
-	if monthSpendLast > 0 {
-		v := (monthSpendThis - monthSpendLast) / monthSpendLast * 100
-		momPercent = &v
+	// Period-over-period delta (vs the preceding equal-length window).
+	var deltaPercent *float64
+	if bounded && prevTotal > 0 {
+		v := (periodTotal - prevTotal) / prevTotal * 100
+		deltaPercent = &v
 	}
 
-	// Top-5 instances in current month.
-	sort.Slice(currentMonthInstances, func(i, j int) bool {
-		return currentMonthInstances[i].ValueBRL > currentMonthInstances[j].ValueBRL
+	// Top-5 instances within the period.
+	sort.Slice(periodInstances, func(i, j int) bool {
+		return periodInstances[i].ValueBRL > periodInstances[j].ValueBRL
 	})
-	if len(currentMonthInstances) > 5 {
-		currentMonthInstances = currentMonthInstances[:5]
+	if len(periodInstances) > 5 {
+		periodInstances = periodInstances[:5]
 	}
 
-	// Budget status (current month).
+	// Window length for averages and budget scaling. For an unbounded (all-time)
+	// range, start at the earliest expense so the averages stay meaningful.
+	effStart := periodStart
+	if !bounded {
+		effStart = minDate
+	}
+	if effStart.IsZero() || effStart.After(periodEnd) {
+		effStart = periodEnd
+	}
+	days := periodEnd.Sub(effStart).Hours()/24 + 1
+	if days < 1 {
+		days = 1
+	}
+	periodMonths := (periodEnd.Year()-effStart.Year())*12 + int(periodEnd.Month()-effStart.Month()) + 1
+	if periodMonths < 1 {
+		periodMonths = 1
+	}
+	avgDaily := periodTotal / days
+	avgMonthly := periodTotal / float64(periodMonths)
+
+	// Budget status scaled to the period (monthly budget × months in range).
 	var budgets []models.Budget
 	_ = h.DB.Find(&budgets).Error
 	type budgetStatus struct {
@@ -513,40 +623,40 @@ func (h *ExpenseHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 	}
 	budgetOut := []budgetStatus{}
 	for _, b := range budgets {
-		spent := monthSpendThis
+		spent := periodTotal
 		if b.Category != "" {
-			spent = categorySpendThisMonth[b.Category]
+			spent = categoryPeriod[b.Category]
 		}
+		scaled := b.AmountBRL * float64(periodMonths)
 		pct := 0.0
-		if b.AmountBRL > 0 {
-			pct = spent / b.AmountBRL * 100
+		if scaled > 0 {
+			pct = spent / scaled * 100
 		}
 		budgetOut = append(budgetOut, budgetStatus{
 			Category:        b.Category,
-			BudgetBRL:       b.AmountBRL,
+			BudgetBRL:       scaled,
 			SpentBRL:        spent,
 			PercentConsumed: pct,
 		})
 	}
 
-	avgDaily := last30Total / 30.0
-	avgMonthly := last12mTotal / 12.0
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"top_category":            topBucket(categoryTotals),
-		"top_name":                topBucket(nameTotals),
-		"top_day":                 topBucket(dayTotals),
-		"top_month":               topBucket(monthTotals),
-		"top_year":                topBucket(yearTotals),
-		"category_breakdown_30d":  sortedBuckets(category30d, true),
-		"average_daily_30d":       avgDaily,
-		"average_monthly_12m":     avgMonthly,
-		"largest_single":          largest,
-		"mom_delta_percent":       momPercent,
-		"top_5_current_month":     currentMonthInstances,
+		"top_category":             topBucket(categoryPeriod),
+		"top_name":                 topBucket(nameTotals),
+		"top_day":                  topBucket(dayTotals),
+		"top_month":                topBucket(monthTotals),
+		"category_breakdown":       sortedBuckets(categoryPeriod, true),
+		"monthly_series":           sortedBuckets(monthTotals, false),
+		"average_daily":            avgDaily,
+		"average_monthly":          avgMonthly,
+		"largest_single":           largestAll,
+		"largest_in_period":        largestPeriod,
+		"period_delta_percent":     deltaPercent,
+		"period_months":            periodMonths,
+		"top_5":                    periodInstances,
 		"budget_status":            budgetOut,
-		"current_month_total_brl":  monthSpendThis,
+		"period_total_brl":         periodTotal,
 		"total_spent_all_time_brl": allTimeTotal,
 	})
 }
@@ -681,4 +791,3 @@ func (h *BudgetHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-

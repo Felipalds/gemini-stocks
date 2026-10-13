@@ -49,6 +49,11 @@ func DetectBank(text string) (bank string, confidence float64) {
 		nubankScore += 0.15
 	}
 	if strings.Contains(lower, "nubank") {
+		nubankScore += 0.3
+	}
+	// NuPay is Nubank's payment brand; newer statements dropped the CNPJ and
+	// "Nu Pagamentos" strings but still reference it.
+	if strings.Contains(lower, "nupay") {
 		nubankScore += 0.2
 	}
 
@@ -200,6 +205,21 @@ func selectedForKind(kind string) bool {
 	return kind == KindPurchase || kind == KindInstallment
 }
 
+// installmentGroupKey is stable across every installment of the same purchase:
+// it intentionally omits the per-month date and installment number so all N
+// charges of one plan hash to the same value.
+func installmentGroupKey(bank, name string, value float64, currency string, of int) string {
+	raw := fmt.Sprintf("%s|%s|%.2f|%s|of%d",
+		bank,
+		strings.ToLower(strings.Join(strings.Fields(name), " ")),
+		value,
+		currency,
+		of,
+	)
+	sum := sha1.Sum([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
 func makeExternalKey(bank string, date time.Time, name string, value float64, currency string, n, of int) string {
 	raw := fmt.Sprintf("%s|%s|%s|%.2f|%s|%d/%d",
 		bank,
@@ -246,18 +266,27 @@ func finishLine(bank, paymentType, name string, date time.Time, value float64, c
 		currency = "BRL"
 	}
 	return Line{
-		Name:         name,
-		OriginalName: name,
-		Date:         date,
-		Value:        value,
-		Currency:     currency,
-		Bank:         bank,
-		PaymentType:  paymentType,
-		Kind:         kind,
-		Selected:     selectedForKind(kind),
-		SkipReason:   reason,
-		InstallmentN: n,
-		InstallmentOf: of,
-		ExternalKey:  makeExternalKey(bank, date, name, value, currency, n, of),
+		Name:             name,
+		OriginalName:     name,
+		Date:             date,
+		Value:            value,
+		Currency:         currency,
+		Bank:             bank,
+		PaymentType:      paymentType,
+		Kind:             kind,
+		Selected:         selectedForKind(kind),
+		SkipReason:       reason,
+		InstallmentN:     n,
+		InstallmentOf:    of,
+		InstallmentGroup: installmentGroup(bank, name, value, currency, of),
+		ExternalKey:      makeExternalKey(bank, date, name, value, currency, n, of),
 	}
+}
+
+// installmentGroup returns the group key only for real installment plans (of > 1).
+func installmentGroup(bank, name string, value float64, currency string, of int) string {
+	if of <= 1 {
+		return ""
+	}
+	return installmentGroupKey(bank, name, value, currency, of)
 }
