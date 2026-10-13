@@ -33,18 +33,26 @@ const (
 
 type Expense struct {
 	gorm.Model
-	ID            string    `gorm:"primaryKey" json:"ID"`
-	Name          string    `json:"name"`
-	Category      string    `json:"category" gorm:"index"`
-	Value         float64   `json:"value"`
-	Currency      string    `json:"currency" gorm:"default:BRL"`
-	Date          time.Time `json:"date" gorm:"index"`
-	Note          string    `json:"note"`
-	Recurring     string    `json:"recurring" gorm:"default:''"`
-	Bank          string    `json:"bank" gorm:"index;default:''"`
-	PaymentType   string    `json:"payment_type" gorm:"index;default:''"`
-	ImportBatchID string    `json:"import_batch_id" gorm:"index;default:''"`
-	ExternalKey   string    `json:"external_key" gorm:"index;default:''"`
+	ID          string    `gorm:"primaryKey" json:"ID"`
+	Name        string    `json:"name"`
+	Category    string    `json:"category" gorm:"index"`
+	Value       float64   `json:"value"`
+	Currency    string    `json:"currency" gorm:"default:BRL"`
+	Date        time.Time `json:"date" gorm:"index"`
+	Note        string    `json:"note"`
+	Recurring   string    `json:"recurring" gorm:"default:''"`
+	Bank        string    `json:"bank" gorm:"index;default:''"`
+	PaymentType string    `json:"payment_type" gorm:"index;default:''"`
+	// Origin is the statement section a row came from (cardholder, or
+	// "Pagamentos e Financiamentos"); set by the importer, empty for manual rows.
+	Origin        string `json:"origin" gorm:"index;default:''"`
+	ImportBatchID string `json:"import_batch_id" gorm:"index;default:''"`
+	ExternalKey   string `json:"external_key" gorm:"index;default:''"`
+	// Installment metadata (0 / "" for one-off purchases). InstallmentGroup is
+	// shared by all charges of one plan so the UI can group them under the purchase.
+	InstallmentN     int    `json:"installment_n" gorm:"default:0"`
+	InstallmentOf    int    `json:"installment_of" gorm:"default:0"`
+	InstallmentGroup string `json:"installment_group" gorm:"index;default:''"`
 }
 
 func (e *Expense) BeforeCreate(tx *gorm.DB) (err error) {

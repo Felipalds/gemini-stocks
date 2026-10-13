@@ -25,6 +25,7 @@ import {
   Target,
   List,
   Wallet,
+  Coins,
   Menu,
 } from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
@@ -131,6 +132,13 @@ export function DashboardLayout({
                 <Button variant="outline" title="Expenses">
                   <Wallet className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">Expenses</span>
+                </Button>
+              </Link>
+
+              <Link to="/dividends">
+                <Button variant="outline" title="Dividends">
+                  <Coins className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Dividends</span>
                 </Button>
               </Link>
 

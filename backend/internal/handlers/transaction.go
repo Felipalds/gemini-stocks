@@ -63,11 +63,18 @@ func (h *TransactionHandler) ensureStockExists(symbol, currency string) {
 			ticker.Price = 0
 		}
 
+		// Prefer the currency Yahoo actually quoted in; fall back to the
+		// transaction's currency when the fetch failed.
+		tickerCurrency := currency
+		if ticker.Currency != "" {
+			tickerCurrency = ticker.Currency
+		}
+
 		newStock := models.Ticker{
 			Symbol:           symbol,
 			Price:            ticker.Price,
 			DayChangePercent: ticker.DayChangePercent,
-			Currency:         currency,
+			Currency:         tickerCurrency,
 		}
 		if err := h.DB.Create(&newStock).Error; err != nil {
 			h.Logger.Error("Failed to save new stock ticker", zap.Error(err))

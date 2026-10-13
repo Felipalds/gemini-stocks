@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ChevronDown, TrendingUp } from "lucide-react";
+import { Camera, ChevronDown, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { type PortfolioSnapshot } from "@/types";
 import { useApp } from "@/contexts/AppContext";
@@ -24,10 +25,10 @@ interface PortfolioEvolutionChartProps {
 export function PortfolioEvolutionChart({
   hideValues,
 }: PortfolioEvolutionChartProps) {
-  const { snapshotEpoch } = useApp();
+  const { snapshotEpoch, takeSnapshot, takingSnapshot } = useApp();
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -118,10 +119,21 @@ export function PortfolioEvolutionChart({
 
       {expanded && (
         <div className="space-y-3 rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">
-            One automatic snapshot per day when you open the app (no Alpha
-            calls).
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Snapshots are taken manually. At most one per day is kept.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => void takeSnapshot()}
+              disabled={takingSnapshot}
+            >
+              <Camera className="mr-1 h-3.5 w-3.5" />
+              {takingSnapshot ? "Saving..." : "Take snapshot"}
+            </Button>
+          </div>
 
           {loading ? (
             <div className="h-[240px] flex items-center justify-center text-sm text-muted-foreground">

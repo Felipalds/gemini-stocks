@@ -29,6 +29,7 @@ backend/*.db-journal
 backend/*.db-wal
 backend/*.db-shm
 backend/*.db.bak*
+backend/*.db.backup*
 backend/*.sqlite
 
 # --- Personal statement PDFs (never commit) ---

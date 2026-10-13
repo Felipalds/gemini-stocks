@@ -7,9 +7,16 @@ import { GoalDialog } from "@/components/organisms/GoalDialog";
 import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDialog";
 import { TickerCard, type TickerData } from "@/components/organisms/TickerCard";
 import { PortfolioEvolutionChart } from "@/components/organisms/PortfolioEvolutionChart";
+import { PortfolioReconstructionChart } from "@/components/organisms/PortfolioReconstructionChart";
+import { DividendsOverview } from "@/components/organisms/DividendsOverview";
 import { GoalProgressCard } from "@/components/organisms/GoalProgressCard";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/contexts/AppContext";
+import {
+  ASSET_CLASSES,
+  classifyAssetClass,
+  type AssetClass,
+} from "@/lib/assetClass";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -32,13 +39,16 @@ export default function DashboardPage() {
   const [goalReloadToken, setGoalReloadToken] = useState(0);
   const [allTransactionsDialogOpen, setAllTransactionsDialogOpen] =
     useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  // Multi-select asset-class filter (BRA / USA / CRYPTO / FIXA). Drives both the
+  // squares below and the Total Portfolio summary. Starts with everything shown.
+  const [assetFilter, setAssetFilter] = useState<Set<AssetClass>>(
+    () => new Set(ASSET_CLASSES),
+  );
 
   // Portfolio treemap logic (from Portfolio.tsx)
   const tickers: TickerData[] = useMemo(() => {
     const tagsMap = new Map<string, string[]>();
     const categoryMap = new Map<string, string>();
-    const currencyMap = new Map<string, string>();
     const dayChangeMap = new Map<string, number>();
     const updatedAtMap = new Map<string, string>();
     for (const sp of stockPrices) {
@@ -47,44 +57,68 @@ export default function DashboardPage() {
         : [];
       tagsMap.set(sp.symbol, tags);
       categoryMap.set(sp.symbol, sp.category || "");
-      currencyMap.set(sp.symbol, sp.currency || "USD");
       dayChangeMap.set(sp.symbol, sp.day_change_percent ?? 0);
       if (sp.updated_at) {
         updatedAtMap.set(sp.symbol, sp.updated_at);
       }
     }
 
+    // Everything is rolled up in BRL. A single symbol can hold transactions in
+    // more than one currency (e.g. BTC/USD bought in both USD and BRL), so we
+    // convert each transaction with ITS OWN currency instead of assuming the
+    // whole position shares the ticker's currency. `*Orig` sums keep the raw,
+    // unconverted figures so a position bought entirely in USD can still show
+    // its original USD values.
     const map = new Map<
       string,
       {
         buyQuantity: number;
         sellQuantity: number;
-        totalBuyCost: number;
-        totalFees: number;
-        currentPrice: number;
+        totalBuyCostBrl: number;
+        totalFeesBrl: number;
+        currentPriceBrl: number;
+        currencies: Set<string>;
+        totalBuyCostOrig: number;
+        totalFeesOrig: number;
+        currentPriceOrig: number;
       }
     >();
 
     for (const t of transactions) {
+      const txCurrency = (t.currency || "USD").toUpperCase();
+      const rate = txCurrency === "USD" ? dollarRate : 1;
+
       const entry = map.get(t.symbol) ?? {
         buyQuantity: 0,
         sellQuantity: 0,
-        totalBuyCost: 0,
-        totalFees: 0,
-        currentPrice: 0,
+        totalBuyCostBrl: 0,
+        totalFeesBrl: 0,
+        currentPriceBrl: 0,
+        currencies: new Set<string>(),
+        totalBuyCostOrig: 0,
+        totalFeesOrig: 0,
+        currentPriceOrig: 0,
       };
 
+      entry.currencies.add(txCurrency);
+
       if (t.type === "BUY") {
-        entry.totalBuyCost += t.quantity * t.price;
+        entry.totalBuyCostBrl += t.quantity * t.price * rate;
+        entry.totalBuyCostOrig += t.quantity * t.price;
         entry.buyQuantity += t.quantity;
       } else {
         entry.sellQuantity += t.quantity;
       }
 
-      entry.totalFees += t.fee || 0;
+      entry.totalFeesBrl += (t.fee || 0) * rate;
+      entry.totalFeesOrig += t.fee || 0;
 
+      // The backend already returns current_price in the transaction's own
+      // currency, so normalizing to BRL here yields a consistent per-symbol
+      // price regardless of which currency the transaction was entered in.
       if (t.current_price) {
-        entry.currentPrice = t.current_price;
+        entry.currentPriceBrl = t.current_price * rate;
+        entry.currentPriceOrig = t.current_price;
       }
 
       map.set(t.symbol, entry);
@@ -93,24 +127,20 @@ export default function DashboardPage() {
     const result: TickerData[] = [];
     for (const [symbol, data] of map) {
       const netQuantity = data.buyQuantity - data.sellQuantity;
-      const currency = currencyMap.get(symbol) ?? "USD";
-      const rate = currency === "USD" ? dollarRate : 1;
 
-      const avgBuyPrice =
-        data.buyQuantity > 0 ? data.totalBuyCost / data.buyQuantity : 0;
-      const totalValue = netQuantity * data.currentPrice * rate;
-      const totalCostBasis = netQuantity * avgBuyPrice * rate;
-      const totalFeesBrl = data.totalFees * rate;
-      const pnl = totalValue - totalCostBasis - totalFeesBrl;
+      const avgBuyPriceBrl =
+        data.buyQuantity > 0 ? data.totalBuyCostBrl / data.buyQuantity : 0;
+      const totalValue = netQuantity * data.currentPriceBrl;
+      const totalCostBasis = netQuantity * avgBuyPriceBrl;
+      const pnl = totalValue - totalCostBasis - data.totalFeesBrl;
       const pnlPercent =
         totalCostBasis !== 0 ? (pnl / totalCostBasis) * 100 : 0;
 
-      // For USD assets, also store original USD values
       const tickerData: TickerData = {
         symbol,
         netQuantity,
-        avgBuyPrice: avgBuyPrice * rate,
-        currentPrice: data.currentPrice * rate,
+        avgBuyPrice: avgBuyPriceBrl,
+        currentPrice: data.currentPriceBrl,
         dayChangePercent: dayChangeMap.get(symbol) ?? 0,
         totalValue,
         pnl,
@@ -121,15 +151,20 @@ export default function DashboardPage() {
         updatedAt: updatedAtMap.get(symbol) ?? null,
       };
 
-      if (currency === "USD") {
-        const totalValueUSD = netQuantity * data.currentPrice;
-        const totalCostBasisUSD = netQuantity * avgBuyPrice;
-        const totalFeesUSD = data.totalFees;
-        const pnlUSD = totalValueUSD - totalCostBasisUSD - totalFeesUSD;
+      // Only positions bought entirely in USD can show meaningful "original
+      // USD" figures. Mixed-currency positions (like BTC) are BRL-only.
+      const isUsdOnly =
+        data.currencies.size === 1 && data.currencies.has("USD");
+      if (isUsdOnly) {
+        const avgBuyPriceUSD =
+          data.buyQuantity > 0 ? data.totalBuyCostOrig / data.buyQuantity : 0;
+        const totalValueUSD = netQuantity * data.currentPriceOrig;
+        const totalCostBasisUSD = netQuantity * avgBuyPriceUSD;
+        const pnlUSD = totalValueUSD - totalCostBasisUSD - data.totalFeesOrig;
 
         tickerData.originalCurrency = "USD";
-        tickerData.avgBuyPriceOriginal = avgBuyPrice;
-        tickerData.currentPriceOriginal = data.currentPrice;
+        tickerData.avgBuyPriceOriginal = avgBuyPriceUSD;
+        tickerData.currentPriceOriginal = data.currentPriceOrig;
         tickerData.pnlOriginal = pnlUSD;
         tickerData.totalValueOriginal = totalValueUSD;
       }
@@ -159,28 +194,48 @@ export default function DashboardPage() {
     return result.sort((a, b) => b.totalValue - a.totalValue);
   }, [transactions, stockPrices, fixedBalances, dollarRate]);
 
+  // Asset classes actually present in the portfolio, in canonical order, so we
+  // only render filter buttons that mean something.
+  const presentClasses = useMemo(() => {
+    const present = new Set<AssetClass>();
+    for (const t of tickers)
+      present.add(
+        classifyAssetClass({
+          symbol: t.symbol,
+          isFixed: t.isFixed,
+          isUsdOnly: t.originalCurrency === "USD",
+        }),
+      );
+    return ASSET_CLASSES.filter((c) => present.has(c));
+  }, [tickers]);
+
+  const filteredTickers = useMemo(
+    () =>
+      tickers.filter((t) =>
+        assetFilter.has(
+          classifyAssetClass({
+            symbol: t.symbol,
+            isFixed: t.isFixed,
+            isUsdOnly: t.originalCurrency === "USD",
+          }),
+        ),
+      ),
+    [tickers, assetFilter],
+  );
+
+  // Square weights are relative to what's currently shown.
   const totalPortfolioValue = useMemo(() => {
-    return tickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
-  }, [tickers]);
+    return filteredTickers.reduce((sum, t) => sum + Math.abs(t.totalValue), 0);
+  }, [filteredTickers]);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of tickers) {
-      const cat =
-        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
-      set.add(cat);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [tickers]);
-
-  const filteredTickers = useMemo(() => {
-    if (!categoryFilter) return tickers;
-    return tickers.filter((t) => {
-      const cat =
-        t.category && t.category.trim() !== "" ? t.category.trim() : "Other";
-      return cat === categoryFilter;
+  const allSelected = presentClasses.every((c) => assetFilter.has(c));
+  const toggleClass = (c: AssetClass) =>
+    setAssetFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
     });
-  }, [tickers, categoryFilter]);
 
   const recentTransactions = useMemo(() => {
     return [...transactions]
@@ -242,10 +297,20 @@ export default function DashboardPage() {
         dollarRate={dollarRate}
         dollarRateUpdatedAt={dollarRateUpdatedAt}
         hideValues={hideValues}
+        assetFilter={assetFilter}
       />
 
+      {/* Dividends quick view: total + per-ticker pie + cumulative line */}
       <div className="mt-6">
+        <DividendsOverview hideValues={hideValues} />
+      </div>
+
+      <div className="mt-6 space-y-6">
         <PortfolioEvolutionChart hideValues={hideValues} />
+        <PortfolioReconstructionChart
+          hideValues={hideValues}
+          assetFilter={assetFilter}
+        />
       </div>
 
       {/* Portfolio Grid */}
@@ -255,27 +320,25 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="mt-6 space-y-4">
-          {categories.length > 0 && (
+          {presentClasses.length > 0 && (
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant={categoryFilter === null ? "default" : "outline"}
-                onClick={() => setCategoryFilter(null)}
+                variant={allSelected ? "default" : "outline"}
+                onClick={() => setAssetFilter(new Set(presentClasses))}
               >
                 All
               </Button>
-              {categories.map((cat) => (
+              {presentClasses.map((cls) => (
                 <Button
-                  key={cat}
+                  key={cls}
                   type="button"
                   size="sm"
-                  variant={categoryFilter === cat ? "default" : "outline"}
-                  onClick={() =>
-                    setCategoryFilter((prev) => (prev === cat ? null : cat))
-                  }
+                  variant={assetFilter.has(cls) ? "default" : "outline"}
+                  onClick={() => toggleClass(cls)}
                 >
-                  {cat}
+                  {cls}
                 </Button>
               ))}
             </div>
@@ -320,8 +383,13 @@ export default function DashboardPage() {
           onEdited={refreshData}
         />
         {transactions.length > 5 && (
-          <div className="text-center mt-4 text-sm text-muted-foreground">
-            Click "All Transactions" in the header to view all
+          <div className="text-center mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setAllTransactionsDialogOpen(true)}
+            >
+              See All Transactions
+            </Button>
           </div>
         )}
       </div>

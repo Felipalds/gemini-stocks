@@ -37,14 +37,14 @@ interface AppContextValue {
   toggleHideValues: () => void;
   refreshData: () => void;
   syncPrices: () => Promise<void>;
-  /** Bumps after daily auto-snapshot attempt so evolution chart can reload */
+  /** Manually capture a portfolio snapshot (at most one per day, enforced server-side) */
+  takeSnapshot: () => Promise<void>;
+  takingSnapshot: boolean;
+  /** Bumps after a snapshot is taken so the evolution chart can reload */
   snapshotEpoch: number;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
-
-/** Shared across Strict Mode double-mounts so we only fire one POST per page load. */
-let dailySnapshotInflight: Promise<void> | null = null;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -57,6 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [hideValues, setHideValues] = useState(false);
+  const [takingSnapshot, setTakingSnapshot] = useState(false);
   const [snapshotEpoch, setSnapshotEpoch] = useState(0);
 
   const refreshData = useCallback(() => {
@@ -80,25 +81,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const ensureDailySnapshot = useCallback(() => {
-    if (!dailySnapshotInflight) {
-      dailySnapshotInflight = fetch("http://localhost:8080/snapshots", {
+  const takeSnapshot = useCallback(async () => {
+    setTakingSnapshot(true);
+    const toastId = toast.loading("Taking portfolio snapshot...");
+    try {
+      const res = await fetch("http://localhost:8080/snapshots", {
         method: "POST",
-      })
-        .then((res) => {
-          if (!res.ok) {
-            console.error("Daily snapshot failed", res.status);
-            return;
-          }
-          setSnapshotEpoch((n) => n + 1);
-        })
-        .catch((err) => console.error("Daily snapshot error:", err))
-        .finally(() => {
-          // Keep the resolved promise so Strict Mode remounts reuse it
-          // instead of POSTing again in the same page lifetime.
+      });
+      if (res.ok) {
+        setSnapshotEpoch((n) => n + 1);
+        if (res.headers.get("X-Snapshot-Status") === "already-today") {
+          toast.success("Snapshot already taken today", {
+            id: toastId,
+            description: "Only one snapshot per day is kept.",
+          });
+        } else {
+          toast.success("Snapshot saved", {
+            id: toastId,
+            description: "Portfolio value captured.",
+          });
+        }
+      } else {
+        toast.error("Snapshot failed", {
+          id: toastId,
+          description: "Could not capture the portfolio. Try again later.",
         });
+      }
+    } catch {
+      toast.error("Connection error", {
+        id: toastId,
+        description: "Failed to reach the server.",
+      });
+    } finally {
+      setTakingSnapshot(false);
     }
-    return dailySnapshotInflight;
   }, []);
 
   const syncPrices = useCallback(async () => {
@@ -155,11 +171,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHideValues((v) => !v);
   }, []);
 
-  // Fetch once on mount + take at most one portfolio snapshot per day
+  // Fetch once on mount. Snapshots are taken manually (see takeSnapshot).
   useEffect(() => {
     refreshData();
-    ensureDailySnapshot();
-  }, [refreshData, ensureDailySnapshot]);
+  }, [refreshData]);
 
   return (
     <AppContext.Provider
@@ -175,6 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toggleHideValues,
         refreshData,
         syncPrices,
+        takeSnapshot,
+        takingSnapshot,
         snapshotEpoch,
       }}
     >

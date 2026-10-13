@@ -22,6 +22,13 @@ var (
 	shortMonthYearRe = regexp.MustCompile(`(?i)FATURA\s+\d{1,2}\s+[A-Z]{3}\s+(\d{4})`)
 	cardMaskRe       = regexp.MustCompile(`(?i)^•+\s*\d+\s*$`)
 
+	// Nubank section headers and repeating page-header noise.
+	comprasDeRe    = regexp.MustCompile(`(?i)^Compras de\s+(.+)$`)
+	nubankPeriodRe = regexp.MustCompile(`(?i)^DE\s+\d{1,2}\s+[A-ZÇ]{3}\s+A\s+\d{1,2}\s+[A-ZÇ]{3}$`)
+	nubankPageRe   = regexp.MustCompile(`(?i)^(\d+|de\s+\d+|\d+\s+de\s+\d+)$`)
+	faturaLineRe   = regexp.MustCompile(`(?i)^(FATURA|EMISSÃO|EMISSAO)\b`)
+	holderNameRe   = regexp.MustCompile(`^[A-ZÀ-Ÿ][A-ZÀ-Ÿ.'\s]{3,48}$`)
+
 	longDateLineRe = regexp.MustCompile(`(?i)^(\d{1,2})\s+de\s+([a-zç.]+)\s+(\d{4})$`)
 	cardHeaderRe   = regexp.MustCompile(`(?i)^CARTÃO\b`)
 	cardTotalRe    = regexp.MustCompile(`(?i)^Total CARTÃO\b`)
@@ -29,6 +36,12 @@ var (
 
 // parseShortMonthLedger handles statements that use "DD MON" dates and a
 // TRANSAÇÕES ledger (e.g. Nubank PDF text layout from ledongthuc/pdf).
+//
+// A Nubank statement repeats the "TRANSAÇÕES" header on every page and groups
+// rows under origin sections ("Compras de <cardholder>", the main holder, and
+// "Pagamentos e Financiamentos"). We read from the FIRST TRANSAÇÕES to the end,
+// skip the repeating page-header noise and the per-section subtotal lines, and
+// tag each row with its origin section.
 func parseShortMonthLedger(text string) ([]Line, []string) {
 	var warnings []string
 	year := 0
@@ -40,33 +53,31 @@ func parseShortMonthLedger(text string) ([]Line, []string) {
 		warnings = append(warnings, "could not detect statement year; using current year")
 	}
 
-	idx := strings.LastIndex(strings.ToUpper(text), "TRANSAÇÕES")
-	if idx < 0 {
-		idx = strings.LastIndex(strings.ToUpper(text), "TRANSACOES")
-	}
-	if idx < 0 {
-		return nil, append(warnings, "TRANSAÇÕES section not found")
-	}
-	section := text[idx:]
+	holder := detectHolder(text)
+	allLines := strings.Split(text, "\n")
 
-	for _, stop := range []string{
-		"Em cumprimento à regulação",
-		"Em cumprimento a regulacao",
-		"Como assegurado pela Resolução",
-	} {
-		if j := strings.Index(section, stop); j > 0 {
-			section = section[:j]
+	// Start at the FIRST standalone "TRANSAÇÕES" line (page headers repeat it).
+	start := -1
+	for i, raw := range allLines {
+		l := strings.TrimSpace(raw)
+		if strings.EqualFold(l, "TRANSAÇÕES") || strings.EqualFold(l, "TRANSACOES") {
+			start = i + 1
 			break
 		}
 	}
+	if start < 0 {
+		return nil, append(warnings, "TRANSAÇÕES section not found")
+	}
 
-	lines := strings.Split(section, "\n")
+	origin := holder
+	seen := map[string]bool{}
 	var out []Line
 	var curDate time.Time
 	var haveDate bool
 	var nameParts []string
 	var usdValue float64
 	var haveUSD bool
+	skipNextAmount := false
 
 	flush := func(amountLine string) {
 		if !haveDate || len(nameParts) == 0 {
@@ -95,15 +106,42 @@ func parseShortMonthLedger(text string) ([]Line, []string) {
 		}
 		haveUSD = false
 		usdValue = 0
-		out = append(out, finishLine(BankNubank, "credit", name, curDate, value, currency, forceKind))
+		if value == 0 {
+			return // skip zero-value rows (e.g. "Saldo restante da fatura anterior R$ 0,00")
+		}
+		line := finishLine(BankNubank, "credit", name, curDate, value, currency, forceKind)
+		line.Origin = origin
+		if seen[line.ExternalKey] {
+			return
+		}
+		seen[line.ExternalKey] = true
+		out = append(out, line)
 	}
 
-	for _, raw := range lines {
+	for _, raw := range allLines[start:] {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
-		if strings.EqualFold(line, "Pagamentos") {
+		// Stop at the trailing legal boilerplate.
+		if strings.HasPrefix(line, "Em cumprimento") ||
+			strings.HasPrefix(line, "Como assegurado") {
+			break
+		}
+		// Origin section headers (their subtotal line follows — skip it).
+		if m := comprasDeRe.FindStringSubmatch(line); m != nil {
+			origin = strings.TrimSpace(m[1])
+			nameParts = nil
+			skipNextAmount = true
+			continue
+		}
+		if strings.EqualFold(line, "Pagamentos e Financiamentos") {
+			origin = "Pagamentos e Financiamentos"
+			nameParts = nil
+			skipNextAmount = true
+			continue
+		}
+		if isNubankNoise(line, holder) {
 			continue
 		}
 		if cardMaskRe.MatchString(line) {
@@ -129,6 +167,11 @@ func parseShortMonthLedger(text string) ([]Line, []string) {
 			continue
 		}
 		if brlAmountRe.MatchString(line) && !strings.Contains(lower, "convers") {
+			if skipNextAmount {
+				skipNextAmount = false
+				nameParts = nil
+				continue
+			}
 			flush(line)
 			continue
 		}
@@ -141,6 +184,69 @@ func parseShortMonthLedger(text string) ([]Line, []string) {
 		warnings = append(warnings, "no transactions parsed for short-month ledger")
 	}
 	return out, warnings
+}
+
+// detectHolder returns the statement holder's name (the ALL-CAPS line that
+// precedes a "FATURA ..." line), title-cased for display. Falls back to "Titular".
+func detectHolder(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, raw := range lines {
+		l := strings.TrimSpace(raw)
+		if !holderNameRe.MatchString(l) || len(strings.Fields(l)) < 2 {
+			continue
+		}
+		// The next non-empty line should be the FATURA header.
+		for j := i + 1; j < len(lines); j++ {
+			n := strings.TrimSpace(lines[j])
+			if n == "" {
+				continue
+			}
+			if faturaLineRe.MatchString(n) {
+				return titleCasePT(l)
+			}
+			break
+		}
+	}
+	return "Titular"
+}
+
+// titleCasePT lower-cases then upper-cases the first rune of each space-separated
+// word (good enough for Brazilian names like "LUIZ FELIPE" → "Luiz Felipe").
+func titleCasePT(s string) string {
+	words := strings.Fields(strings.ToLower(s))
+	for i, w := range words {
+		r := []rune(w)
+		if len(r) > 0 {
+			r[0] = []rune(strings.ToUpper(string(r[0])))[0]
+			words[i] = string(r)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// isNubankNoise reports whether a line is repeating page-header/section chrome
+// rather than a transaction fragment.
+func isNubankNoise(line, holder string) bool {
+	if strings.EqualFold(line, "TRANSAÇÕES") || strings.EqualFold(line, "TRANSACOES") {
+		return true
+	}
+	if strings.EqualFold(line, "Pagamentos") {
+		return true
+	}
+	if faturaLineRe.MatchString(line) {
+		return true
+	}
+	if nubankPeriodRe.MatchString(line) {
+		return true
+	}
+	if nubankPageRe.MatchString(line) {
+		return true
+	}
+	// Repeated ALL-CAPS holder header line.
+	if holder != "" && strings.EqualFold(titleCasePT(line), holder) {
+		return true
+	}
+	return false
 }
 
 // parseLongDateLedger handles statements that use "DD de mon. YYYY" dates and
@@ -161,6 +267,7 @@ func parseLongDateLedger(text string) ([]Line, []string) {
 		var curDate time.Time
 		var haveDate bool
 		var nameParts []string
+		origin := ""
 
 		flush := func(amountLine string) {
 			if !haveDate || len(nameParts) == 0 {
@@ -183,6 +290,7 @@ func parseLongDateLedger(text string) ([]Line, []string) {
 				forceKind = KindIOF
 			}
 			line := finishLine(BankInter, "credit", name, curDate, value, "BRL", forceKind)
+			line.Origin = origin
 			if seen[line.ExternalKey] {
 				return
 			}
@@ -195,7 +303,11 @@ func parseLongDateLedger(text string) ([]Line, []string) {
 			if line == "" {
 				continue
 			}
-			if cardHeaderRe.MatchString(line) || cardTotalRe.MatchString(line) {
+			if cardHeaderRe.MatchString(line) {
+				origin = strings.TrimSpace(line)
+				continue
+			}
+			if cardTotalRe.MatchString(line) {
 				continue
 			}
 			if line == "Data" || line == "Movimentação" || line == "Movimentacao" || line == "Beneficiário" || line == "Beneficiario" || line == "Valor" {

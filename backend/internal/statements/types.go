@@ -22,27 +22,33 @@ const (
 
 // Line is one statement entry ready for preview / insert.
 type Line struct {
-	Name            string    `json:"name"`
-	OriginalName    string    `json:"original_name"`
-	Category        string    `json:"category"`
-	Date            time.Time `json:"date"`
-	Value           float64   `json:"value"`
-	Currency        string    `json:"currency"`
-	Bank            string    `json:"bank"`
-	PaymentType     string    `json:"payment_type"`
-	Kind            string    `json:"kind"`
-	Selected        bool      `json:"selected"`
-	SkipReason      string    `json:"skip_reason,omitempty"`
-	InstallmentN    int       `json:"installment_n,omitempty"`
-	InstallmentOf   int       `json:"installment_of,omitempty"`
-	ExternalKey     string    `json:"external_key"`
-	AlreadyImported bool      `json:"already_imported"`
-	HasAlias        bool      `json:"has_alias"`
+	Name         string `json:"name"`
+	OriginalName string `json:"original_name"`
+	Category     string `json:"category"`
+	// Origin is the statement section the row came from: the cardholder
+	// (e.g. "Compras de X" → "X"), the main holder, or "Pagamentos e Financiamentos".
+	Origin        string    `json:"origin"`
+	Date          time.Time `json:"date"`
+	Value         float64   `json:"value"`
+	Currency      string    `json:"currency"`
+	Bank          string    `json:"bank"`
+	PaymentType   string    `json:"payment_type"`
+	Kind          string    `json:"kind"`
+	Selected      bool      `json:"selected"`
+	SkipReason    string    `json:"skip_reason,omitempty"`
+	InstallmentN  int       `json:"installment_n,omitempty"`
+	InstallmentOf int       `json:"installment_of,omitempty"`
+	// InstallmentGroup is stable across all installments of one purchase (it omits
+	// the per-month date and number), so the UI can group them under the purchase.
+	InstallmentGroup string `json:"installment_group,omitempty"`
+	ExternalKey      string `json:"external_key"`
+	AlreadyImported  bool   `json:"already_imported"`
+	HasAlias         bool   `json:"has_alias"`
 }
 
 // Preview is the response of POST /expenses/import (parse only).
 type Preview struct {
-	Bank     string `json:"bank"`
-	Lines    []Line `json:"lines"`
+	Bank     string   `json:"bank"`
+	Lines    []Line   `json:"lines"`
 	Warnings []string `json:"warnings"`
 }

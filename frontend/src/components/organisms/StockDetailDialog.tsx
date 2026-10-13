@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -9,9 +8,11 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Pencil, RefreshCw, Plus } from "lucide-react";
+import { TrendingUp, TrendingDown, Pencil, RefreshCw } from "lucide-react";
 import { type TickerData } from "@/components/organisms/TickerCard";
-import { TransactionTypeBadge } from "@/components/molecules/TransactionTypeBadge";
+import { TickerHistoryChart } from "@/components/organisms/TickerHistoryChart";
+import { TransactionList } from "@/components/organisms/TransactionList";
+import { AllTransactionsDialog } from "@/components/organisms/AllTransactionsDialog";
 import { useApp } from "@/contexts/AppContext";
 import { formatCurrency, formatQuantity } from "@/lib/format";
 import { toast } from "sonner";
@@ -51,8 +52,47 @@ export function StockDetailDialog({
   onRefreshed,
 }: StockDetailDialogProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const [allTxOpen, setAllTxOpen] = useState(false);
+  const { transactions, loading, refreshData } = useApp();
   const fmt = (val: number) => formatCurrency(val, ticker.currency);
   const isPositive = ticker.pnl >= 0;
+
+  const tickerTransactions = useMemo(
+    () =>
+      transactions
+        .filter((t) => t.symbol === ticker.symbol)
+        .sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        ),
+    [transactions, ticker.symbol],
+  );
+  const latestTransactions = tickerTransactions.slice(0, 5);
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this transaction?")) return;
+
+    const toastId = toast.loading("Deleting transaction...");
+    try {
+      const res = await fetch(`http://localhost:8080/transactions/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        toast.success("Transaction deleted", { id: toastId });
+        refreshData();
+        onRefreshed?.();
+      } else {
+        toast.error("Failed to delete", { id: toastId });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error connecting to server", { id: toastId });
+    }
+  };
+
+  const handleTransactionEdited = () => {
+    refreshData();
+    onRefreshed?.();
+  };
 
   // Solid background: blend tint with base color (white for light, dark gray for dark)
   const intensity = Math.min(Math.abs(ticker.pnlPercent) / 20, 1);
@@ -78,7 +118,7 @@ export function StockDetailDialog({
       if (res.ok) {
         toast.success(`${ticker.symbol} updated`, {
           id: toastId,
-          description: "Latest price fetched from Alpha Vantage.",
+          description: "Latest price fetched from Yahoo Finance.",
         });
         onRefreshed?.();
       } else {
@@ -208,12 +248,53 @@ export function StockDetailDialog({
             </div>
           )}
 
-          {/* Placeholder for future chart */}
-          <div className="mt-10 border border-dashed border-muted-foreground/30 rounded-lg p-8 text-center text-muted-foreground">
-            Chart coming soon
+          {/* Price history chart, loaded inline while this dialog is open */}
+          <div className="mt-10">
+            <TickerHistoryChart
+              symbol={ticker.symbol}
+              currency={ticker.currency}
+              hideValues={hideValues}
+              active={open}
+            />
+          </div>
+
+          {/* Latest transactions for this ticker */}
+          <div className="mt-10">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">
+                Latest transactions
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {tickerTransactions.length} total
+                </span>
+              </h3>
+              {tickerTransactions.length > 5 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAllTxOpen(true)}
+                >
+                  Show all
+                </Button>
+              )}
+            </div>
+            <TransactionList
+              transactions={latestTransactions}
+              isLoading={loading}
+              onDelete={(id) => void handleDeleteTransaction(id)}
+              onEdited={handleTransactionEdited}
+            />
           </div>
         </div>
       </DialogContent>
+
+      <AllTransactionsDialog
+        open={allTxOpen}
+        onOpenChange={setAllTxOpen}
+        transactions={tickerTransactions}
+        isLoading={loading}
+        onDelete={(id) => void handleDeleteTransaction(id)}
+        onEdited={handleTransactionEdited}
+      />
     </Dialog>
   );
 }

@@ -5,6 +5,7 @@ import { type FixedBalance, type Transaction } from "@/types";
 import { type StockPriceInfo } from "@/contexts/AppContext";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { classifyAssetClass, type AssetClass } from "@/lib/assetClass";
 import {
   PortfolioPieChart,
   type PieSlice,
@@ -18,6 +19,8 @@ interface PortfolioSummaryProps {
   dollarRate: number;
   dollarRateUpdatedAt?: string | null;
   hideValues?: boolean;
+  /** Only holdings whose asset class is in this set count toward the total/charts. */
+  assetFilter: Set<AssetClass>;
 }
 
 const HIDDEN = "••••••";
@@ -29,8 +32,9 @@ export function PortfolioSummary({
   dollarRate,
   dollarRateUpdatedAt,
   hideValues,
+  assetFilter,
 }: PortfolioSummaryProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 
@@ -47,39 +51,48 @@ export function PortfolioSummary({
       categoryMap.set(sp.symbol, sp.category || "Other");
     }
 
+    // A single symbol can mix currencies (e.g. BTC/USD bought in both USD and
+    // BRL), so we normalize every transaction to BRL using ITS OWN currency
+    // rather than tagging the whole position with one currency.
     const symbolMap = new Map<
       string,
       {
         buyQuantity: number;
         sellQuantity: number;
-        totalBuyCost: number;
-        totalFees: number;
-        currentPrice: number;
-        currency: string;
+        totalBuyCostBrl: number;
+        totalFeesBrl: number;
+        currentPriceBrl: number;
+        currencies: Set<string>;
       }
     >();
 
     for (const t of transactions) {
+      const txCurrency = (t.currency || "USD").toUpperCase();
+      const rate = txCurrency === "USD" ? dollarRate : 1;
+
       const entry = symbolMap.get(t.symbol) ?? {
         buyQuantity: 0,
         sellQuantity: 0,
-        totalBuyCost: 0,
-        totalFees: 0,
-        currentPrice: t.current_price ?? 0,
-        currency: t.currency || "USD",
+        totalBuyCostBrl: 0,
+        totalFeesBrl: 0,
+        currentPriceBrl: 0,
+        currencies: new Set<string>(),
       };
+
+      entry.currencies.add(txCurrency);
 
       if (t.type === "BUY") {
         entry.buyQuantity += t.quantity;
-        entry.totalBuyCost += t.quantity * t.price;
+        entry.totalBuyCostBrl += t.quantity * t.price * rate;
       } else {
         entry.sellQuantity += t.quantity;
       }
 
-      entry.totalFees += t.fee || 0;
+      entry.totalFeesBrl += (t.fee || 0) * rate;
 
+      // Backend returns current_price in the transaction's own currency.
       if (t.current_price) {
-        entry.currentPrice = t.current_price;
+        entry.currentPriceBrl = t.current_price * rate;
       }
 
       symbolMap.set(t.symbol, entry);
@@ -93,30 +106,39 @@ export function PortfolioSummary({
     const catTotals = new Map<string, number>();
 
     for (const [symbol, data] of symbolMap) {
-      const netQuantity = data.buyQuantity - data.sellQuantity;
-      const value = netQuantity * data.currentPrice;
-      const avgBuyPrice =
-        data.buyQuantity > 0 ? data.totalBuyCost / data.buyQuantity : 0;
-      const costBasis = netQuantity * avgBuyPrice;
+      const category = categoryMap.get(symbol) || "Other";
+      const isUsdOnly =
+        data.currencies.size === 1 && data.currencies.has("USD");
+      const assetClass = classifyAssetClass({ symbol, isUsdOnly });
+      if (!assetFilter.has(assetClass)) continue;
 
-      if (data.currency === "BRL") {
-        brlValue += value;
-        brlCostBasis += costBasis + data.totalFees;
+      const netQuantity = data.buyQuantity - data.sellQuantity;
+      const valueBrl = netQuantity * data.currentPriceBrl;
+      const avgBuyPriceBrl =
+        data.buyQuantity > 0 ? data.totalBuyCostBrl / data.buyQuantity : 0;
+      const costBasisBrl = netQuantity * avgBuyPriceBrl;
+
+      // Positions bought entirely in USD are reported in the USD bucket (values
+      // divided back out of BRL). Anything mixed (like BTC) is BRL-only.
+      if (isUsdOnly && dollarRate > 0) {
+        usdValue += valueBrl / dollarRate;
+        usdCostBasis += (costBasisBrl + data.totalFeesBrl) / dollarRate;
       } else {
-        usdValue += value;
-        usdCostBasis += costBasis + data.totalFees;
+        brlValue += valueBrl;
+        brlCostBasis += costBasisBrl + data.totalFeesBrl;
       }
 
-      const valueInBRL = data.currency === "BRL" ? value : value * dollarRate;
-      const absValue = Math.abs(valueInBRL);
+      const absValue = Math.abs(valueBrl);
 
       chartSlices.push({ name: symbol, value: absValue });
 
-      const category = categoryMap.get(symbol) || "Other";
       catTotals.set(category, (catTotals.get(category) || 0) + absValue);
     }
 
     for (const fb of fixedBalances) {
+      if (!assetFilter.has("FIXA")) continue;
+      const category = fb.category || "FIXA";
+
       const amount = fb.amount || 0;
       const currency = fb.currency || "BRL";
       if (currency === "BRL") {
@@ -131,7 +153,6 @@ export function PortfolioSummary({
       const absValue = Math.abs(valueInBRL);
       chartSlices.push({ name: fb.name, value: absValue });
 
-      const category = fb.category || "FIXA";
       catTotals.set(category, (catTotals.get(category) || 0) + absValue);
     }
 
@@ -149,7 +170,7 @@ export function PortfolioSummary({
       assetSlices: chartSlices,
       categorySlices: catSlices,
     };
-  }, [transactions, stockPrices, fixedBalances, dollarRate]);
+  }, [transactions, stockPrices, fixedBalances, dollarRate, assetFilter]);
 
   const totalInBRL = totalBRL + totalUSD * dollarRate;
   const totalPnlInBRL = totalPnlBRL + totalPnlUSD * dollarRate;

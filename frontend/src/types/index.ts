@@ -19,15 +19,20 @@ export interface Expense {
   recurring: RecurringKind;
   bank?: ExpenseBank;
   payment_type?: PaymentType;
+  origin?: string;
   import_batch_id?: string;
   external_key?: string;
   value_brl?: number;
+  installment_n?: number;
+  installment_of?: number;
+  installment_group?: string;
 }
 
 export interface StatementImportLine {
   name: string;
   original_name: string;
   category: string;
+  origin: string;
   date: string;
   value: number;
   currency: string;
@@ -38,6 +43,7 @@ export interface StatementImportLine {
   skip_reason?: string;
   installment_n?: number;
   installment_of?: number;
+  installment_group?: string;
   external_key: string;
   already_imported: boolean;
   has_alias: boolean;
@@ -53,36 +59,51 @@ export interface AnalyticsBucket {
   total_brl: number;
 }
 
+export interface ExpenseInstance {
+  name: string;
+  category: string;
+  date: string;
+  value_brl: number;
+}
+
+/** Analytics scoped to a selected period (via ?from=&to=), plus all-time totals. */
 export interface ExpenseAnalytics {
   top_category: AnalyticsBucket | null;
   top_name: AnalyticsBucket | null;
   top_day: AnalyticsBucket | null;
   top_month: AnalyticsBucket | null;
-  top_year: AnalyticsBucket | null;
-  category_breakdown_30d: AnalyticsBucket[];
-  average_daily_30d: number;
-  average_monthly_12m: number;
-  largest_single: {
-    name: string;
-    category: string;
-    date: string;
-    value_brl: number;
-  } | null;
-  mom_delta_percent: number | null;
-  top_5_current_month: Array<{
-    name: string;
-    category: string;
-    date: string;
-    value_brl: number;
-  }>;
+  /** Category breakdown within the selected period. */
+  category_breakdown: AnalyticsBucket[];
+  /** Monthly totals within the period, ascending by "YYYY-MM" key. */
+  monthly_series: AnalyticsBucket[];
+  /** Average daily / monthly spend across the period. */
+  average_daily: number;
+  average_monthly: number;
+  /** Largest single expense of all time. */
+  largest_single: ExpenseInstance | null;
+  /** Largest single expense within the selected period. */
+  largest_in_period: ExpenseInstance | null;
+  /** % change vs the preceding equal-length window; null for all-time ranges. */
+  period_delta_percent: number | null;
+  /** Calendar months spanned by the period (used to scale budgets). */
+  period_months: number;
+  top_5: ExpenseInstance[];
   budget_status: Array<{
     category: string;
     budget_brl: number;
     spent_brl: number;
     percent_consumed: number;
   }>;
-  current_month_total_brl: number;
+  /** Total spent within the selected period. */
+  period_total_brl: number;
   total_spent_all_time_brl: number;
+}
+
+export interface Budget {
+  ID: string;
+  /** Empty means the overall monthly budget; otherwise scoped to this category. */
+  category: string;
+  amount_brl: number;
 }
 
 export interface ExpenseTotals {
@@ -149,6 +170,55 @@ export interface PortfolioSnapshot {
   holdings_json: string;
   note: string;
   CreatedAt: string;
+}
+
+export type DividendKind = "dividend" | "jcp" | "profit";
+
+export interface Dividend {
+  ID: string;
+  symbol: string;
+  kind: DividendKind;
+  amount: number;
+  /** Tax paid on this income event, in the same currency as `amount`. */
+  tax?: number;
+  currency: string;
+  /** USD→BRL rate entered manually at record time; used to convert USD amounts. */
+  dollar_rate?: number;
+  date: string;
+  note: string;
+  value_brl?: number;
+  /** "manual" (default) or "yahoo" when imported by the sync. */
+  source?: string;
+}
+
+/** A computed, not-yet-saved dividend proposed by the Yahoo sync preview. */
+export interface DividendCandidate {
+  symbol: string;
+  kind: DividendKind;
+  date: string;
+  per_share: number;
+  shares: number;
+  amount: number;
+  currency: string;
+  dollar_rate: number;
+  value_brl: number;
+  /** "new" or "probably_added" (a similar entry already exists). */
+  status: "new" | "probably_added";
+  note: string;
+}
+
+export interface TickerDividendBucket {
+  symbol: string;
+  count: number;
+  total_brl: number;
+}
+
+export interface DividendSummary {
+  total_brl: number;
+  count: number;
+  by_ticker: TickerDividendBucket[];
+  by_year: AnalyticsBucket[];
+  by_month: AnalyticsBucket[];
 }
 
 export interface GoalAllocation {

@@ -17,6 +17,19 @@ func TestDetectBank_Nubank(t *testing.T) {
 	}
 }
 
+// Newer Nubank statements dropped "Nu Pagamentos" and the CNPJ; they must still
+// be detected from the "nubank"/"nupay"/"transações" markers alone.
+func TestDetectBank_NubankNewLayout(t *testing.T) {
+	text := "Olá, Luiz.\nEsta é a sua fatura Nubank\nTRANSAÇÕES\nPagamento via NuPay\nlogin com sua conta Nubank"
+	bank, conf := DetectBank(text)
+	if bank != BankNubank {
+		t.Fatalf("got bank %q", bank)
+	}
+	if conf < 0.4 {
+		t.Fatalf("low confidence %v", conf)
+	}
+}
+
 func TestDetectBank_Inter(t *testing.T) {
 	text := "Banco Inter S/A\nDespesas da fatura\nPontos Loop\nwww.bancointer.com.br"
 	bank, conf := DetectBank(text)
@@ -133,6 +146,108 @@ Em cumprimento à regulação do Banco Central, resto
 
 	if parc.ExternalKey == "" || parc.ExternalKey == uber.ExternalKey {
 		t.Fatal("external keys should be unique and set")
+	}
+}
+
+// Mimics the real Nubank layout: the TRANSAÇÕES/page header repeats across
+// pages, rows are grouped under origin sections (main holder, "Compras de X",
+// "Pagamentos e Financiamentos"), each section starts with a subtotal line, and
+// there are zero-value "Saldo restante" rows — all of which must be handled.
+func TestParse_NubankMultiSectionOrigins(t *testing.T) {
+	text := `
+LUIZ FELIPE FONSECA ROSA
+FATURA 08 SET 2026
+EMISSÃO E ENVIO 01 SET 2026
+TRANSAÇÕES
+DE 01 AGO A 01 SET
+Luiz F F Rosa
+R$ 5.188,74
+01 AGO
+
+•••• 6948
+Cafe do Luiz
+R$ 10,00
+02 AGO
+
+•••• 6948
+Mercado
+R$ 50,00
+3
+ de 9
+LUIZ FELIPE FONSECA ROSA
+FATURA 08 SET 2026
+EMISSÃO E ENVIO 01 SET 2026
+TRANSAÇÕES
+DE 01 AGO A 01 SET
+05 AGO
+
+•••• 6948
+Restaurante
+R$ 30,00
+Compras de Clarice C Fonseca
+R$ 931,77
+19 AGO
+
+•••• 4526
+Padaria da Clarice
+R$ 20,00
+Pagamentos e Financiamentos
+-R$ 1.215,08
+02 AGO
+Pagamento em 02 AGO
+−R$ 1.215,08
+10 AGO
+Saldo restante da fatura anterior
+R$ 0,00
+Em cumprimento à regulação do Banco Central, resto
+`
+	prev, err := Parse(text, BankNubank)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := prev.Lines
+
+	// 3 holder purchases + 1 Clarice purchase + 1 payment (zero-value row skipped).
+	if len(lines) != 5 {
+		t.Fatalf("expected 5 lines, got %d: %+v", len(lines), lines)
+	}
+
+	byOrigin := map[string]int{}
+	for _, l := range lines {
+		byOrigin[l.Origin]++
+	}
+	if byOrigin["Luiz Felipe Fonseca Rosa"] != 3 {
+		t.Errorf("holder origin count: %v", byOrigin)
+	}
+	if byOrigin["Clarice C Fonseca"] != 1 {
+		t.Errorf("clarice origin count: %v", byOrigin)
+	}
+	if byOrigin["Pagamentos e Financiamentos"] != 1 {
+		t.Errorf("payments origin count: %v", byOrigin)
+	}
+
+	// No subtotal line (5.188,74 / 931,77) or zero-value row leaked in as a purchase.
+	for _, l := range lines {
+		if l.Value == 5188.74 || l.Value == 931.77 || l.Value == 0 {
+			t.Errorf("spurious row leaked: %+v", l)
+		}
+		if strings.HasPrefix(l.Name, "Compras de") {
+			t.Errorf("section header parsed as transaction: %+v", l)
+		}
+	}
+
+	// The payment must be classified and unchecked.
+	var payments int
+	for _, l := range lines {
+		if l.Kind == KindPayment {
+			payments++
+			if l.Selected {
+				t.Errorf("payment should be unchecked: %+v", l)
+			}
+		}
+	}
+	if payments != 1 {
+		t.Errorf("expected 1 payment, got %d", payments)
 	}
 }
 

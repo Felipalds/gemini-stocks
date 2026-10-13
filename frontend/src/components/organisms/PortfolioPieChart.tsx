@@ -19,6 +19,68 @@ interface PortfolioPieChartProps {
   title?: string;
   className?: string;
   onClick?: () => void;
+  /** Render a label on each slice (used by the large dialog view). */
+  showLabels?: boolean;
+  /** Slice label content: percentage (default) or the R$ value with 2 decimals. */
+  labelKind?: LabelKind;
+  /** Mask monetary values (labels fall back to the name only). */
+  hideValues?: boolean;
+  /** Called with the slice name when an individual slice is clicked. */
+  onSliceClick?: (name: string) => void;
+}
+
+const RADIAN = Math.PI / 180;
+
+type LabelKind = "percent" | "currency";
+
+// Positioned label just outside each slice. Only slices > 10% get a label, so
+// small slices stay uncluttered (and no dangling leader lines for hidden ones).
+// `labelKind` picks between a percentage and the R$ value (2 decimals).
+function renderSliceLabel(
+  props: {
+    cx?: number;
+    cy?: number;
+    midAngle?: number;
+    outerRadius?: number;
+    name?: string;
+    percent?: number;
+    value?: number;
+  },
+  labelKind: LabelKind,
+  hideValues?: boolean
+) {
+  const { cx, cy, midAngle, outerRadius, name, percent, value } = props;
+  if (
+    cx == null ||
+    cy == null ||
+    midAngle == null ||
+    outerRadius == null ||
+    percent == null ||
+    !name ||
+    percent <= 0.1
+  ) {
+    return null;
+  }
+  const r = outerRadius + 18;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  const text =
+    labelKind === "currency"
+      ? hideValues
+        ? name
+        : `${name}: ${formatCurrency(value ?? 0, "BRL")}`
+      : `${name} ${(percent * 100).toFixed(0)}%`;
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor={x > cx ? "start" : "end"}
+      dominantBaseline="central"
+      className="fill-foreground text-xs"
+    >
+      {text}
+    </text>
+  );
 }
 
 const COLORS = [
@@ -109,6 +171,10 @@ export function PortfolioPieChart({
   title,
   className,
   onClick,
+  showLabels,
+  labelKind = "percent",
+  hideValues,
+  onSliceClick,
 }: PortfolioPieChartProps) {
   const filtered = useMemo(
     () =>
@@ -144,17 +210,35 @@ export function PortfolioPieChart({
               cx="50%"
               cy="50%"
               innerRadius="40%"
-              outerRadius="80%"
+              outerRadius={showLabels ? "70%" : "80%"}
               paddingAngle={2}
               dataKey="value"
               nameKey="name"
               stroke="none"
+              isAnimationActive={false}
+              label={
+                showLabels
+                  ? (props) => renderSliceLabel(props, labelKind, hideValues)
+                  : undefined
+              }
+              labelLine={false}
+              onClick={
+                onSliceClick
+                  ? (entry: { name?: string }) => {
+                      if (entry?.name) onSliceClick(entry.name);
+                    }
+                  : undefined
+              }
             >
               {filtered.map((_entry, index) => (
-                <Cell key={index} fill={getColor(index)} />
+                <Cell
+                  key={index}
+                  fill={getColor(index)}
+                  className={onSliceClick ? "cursor-pointer" : undefined}
+                />
               ))}
             </Pie>
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
             <Legend
               content={(props) => (
                 <CustomLegend {...props} filteredData={filtered} />
