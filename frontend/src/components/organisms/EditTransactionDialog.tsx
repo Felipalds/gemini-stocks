@@ -37,6 +37,7 @@ export function EditTransactionDialog({
     currency: (transaction.currency as "USD" | "BRL") || "USD",
     date: new Date(transaction.date).toISOString().split("T")[0],
     note: transaction.note || "",
+    exchange_rate: transaction.exchange_rate,
   };
 
   async function onSubmit(values: TransactionFormValues) {

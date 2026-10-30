@@ -291,6 +291,96 @@ func (s *FinanceService) FetchDividends(symbol string, currency string) ([]Divid
 	return events, nil
 }
 
+// GetHistoricalRate returns the exchange rate from one currency to another on (or
+// just before) the given date, using Yahoo's "{FROM}{TO}=X" daily series. Yahoo
+// has no data on weekends/holidays, so it picks the most recent close on or
+// before the target day, falling back to the newest close in the window.
+//
+// Only fiat pairs are supported (the app only ever needs USD->BRL for historical
+// transaction cost). from == to returns 1.
+func (s *FinanceService) GetHistoricalRate(fromCurrency, toCurrency string, date time.Time) (float64, error) {
+	from := strings.ToUpper(strings.TrimSpace(fromCurrency))
+	to := strings.ToUpper(strings.TrimSpace(toCurrency))
+	if from == to {
+		return 1, nil
+	}
+
+	yahooSymbol := fmt.Sprintf("%s%s=X", from, to)
+	// Window around the target date so a single request covers it even across a
+	// weekend/holiday gap.
+	period1 := date.AddDate(0, 0, -10).Unix()
+	period2 := date.AddDate(0, 0, 2).Unix()
+	url := fmt.Sprintf("%s/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d", s.baseURL, yahooSymbol, period1, period2)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return 0, fmt.Errorf("rate limit exceeded for %s", yahooSymbol)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("Yahoo returned status %d for %s", resp.StatusCode, yahooSymbol)
+	}
+
+	var data yahooHistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return 0, err
+	}
+	if data.Chart.Error != nil {
+		return 0, fmt.Errorf("Yahoo error for %s: %s", yahooSymbol, data.Chart.Error.Description)
+	}
+	if len(data.Chart.Result) == 0 {
+		return 0, fmt.Errorf("no data returned for %s", yahooSymbol)
+	}
+
+	res := data.Chart.Result[0]
+	if len(res.Indicators.Quote) == 0 {
+		return 0, fmt.Errorf("no quote indicators returned for %s", yahooSymbol)
+	}
+	closes := res.Indicators.Quote[0].Close
+
+	// Pick the most recent close on/before the end of the target day.
+	target := date.Unix() + 86400
+	best, bestTs := 0.0, int64(0)
+	for i, ts := range res.Timestamp {
+		if i >= len(closes) {
+			break
+		}
+		c := closes[i]
+		if c == 0 {
+			continue
+		}
+		if ts <= target && ts >= bestTs {
+			bestTs, best = ts, c
+		}
+	}
+	// Fall back to the latest available close in the window (e.g. a date earlier
+	// than Yahoo's first datapoint).
+	if best == 0 {
+		for i := len(res.Timestamp) - 1; i >= 0; i-- {
+			if i < len(closes) && closes[i] != 0 {
+				best = closes[i]
+				break
+			}
+		}
+	}
+	if best == 0 {
+		return 0, fmt.Errorf("no historical rate for %s near %s", yahooSymbol, date.Format("2006-01-02"))
+	}
+
+	s.Logger.Infof("Historical rate %s on %s: %.4f", yahooSymbol, date.Format("2006-01-02"), best)
+	return best, nil
+}
+
 // UpdateTickerFromAPI updates some infos about the ticker
 func (s *FinanceService) UpdateTickerFromAPI(symbol string, currency string) (models.Ticker, error) {
 	var updatedTicker models.Ticker

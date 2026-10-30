@@ -86,7 +86,16 @@ export default function DashboardPage() {
 
     for (const t of transactions) {
       const txCurrency = (t.currency || "USD").toUpperCase();
-      const rate = txCurrency === "USD" ? dollarRate : 1;
+      // Market value uses today's rate (what it's worth now); cost uses the rate
+      // actually paid on the purchase date (snapshotted on the transaction),
+      // falling back to today's rate for rows not yet backfilled (never 0).
+      const marketRate = txCurrency === "USD" ? dollarRate : 1;
+      const costRate =
+        txCurrency === "USD"
+          ? t.exchange_rate && t.exchange_rate > 0
+            ? t.exchange_rate
+            : dollarRate
+          : 1;
 
       const entry = map.get(t.symbol) ?? {
         buyQuantity: 0,
@@ -103,21 +112,21 @@ export default function DashboardPage() {
       entry.currencies.add(txCurrency);
 
       if (t.type === "BUY") {
-        entry.totalBuyCostBrl += t.quantity * t.price * rate;
+        entry.totalBuyCostBrl += t.quantity * t.price * costRate;
         entry.totalBuyCostOrig += t.quantity * t.price;
         entry.buyQuantity += t.quantity;
       } else {
         entry.sellQuantity += t.quantity;
       }
 
-      entry.totalFeesBrl += (t.fee || 0) * rate;
+      entry.totalFeesBrl += (t.fee || 0) * costRate;
       entry.totalFeesOrig += t.fee || 0;
 
       // The backend already returns current_price in the transaction's own
       // currency, so normalizing to BRL here yields a consistent per-symbol
       // price regardless of which currency the transaction was entered in.
       if (t.current_price) {
-        entry.currentPriceBrl = t.current_price * rate;
+        entry.currentPriceBrl = t.current_price * marketRate;
         entry.currentPriceOrig = t.current_price;
       }
 

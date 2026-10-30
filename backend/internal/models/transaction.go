@@ -25,6 +25,12 @@ type Transaction struct {
 	Fee      float64         `json:"fee" gorm:"default:0"`
 	Date     time.Time       `json:"date"`
 	Note     string          `json:"note"`
+	// ExchangeRate is the effective all-in rate (FX + IOF) from the transaction's
+	// Currency to BRL, snapshotted at creation from the purchase-day rate. It is
+	// 1 for BRL transactions. A value of 0 means "not set" (e.g. a legacy row not
+	// yet backfilled) and callers must fall back to the current rate — never
+	// multiply by 0. See POST /transactions/backfill-rates.
+	ExchangeRate float64 `json:"exchange_rate" gorm:"default:0"`
 }
 
 func (t *Transaction) BeforeCreate(tx *gorm.DB) (err error) {

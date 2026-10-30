@@ -10,4 +10,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    fs: {
+      // Allow importing repo-level docs (e.g. ../docs/Q&A.md) into the app.
+      allow: [path.resolve(__dirname, "..")],
+    },
+  },
 });

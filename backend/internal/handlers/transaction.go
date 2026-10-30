@@ -82,6 +82,29 @@ func (h *TransactionHandler) ensureStockExists(symbol, currency string) {
 	}
 }
 
+// computeExchangeRate returns the effective all-in rate (FX + IOF) from the
+// transaction's currency to BRL for the given date. BRL is always 1. On any
+// failure it returns 0, which signals callers to fall back to the current rate
+// (never multiply by 0).
+func (h *TransactionHandler) computeExchangeRate(currency string, txType models.TransactionType, date time.Time) float64 {
+	if strings.EqualFold(currency, "BRL") {
+		return 1
+	}
+
+	market, err := h.Finance.GetHistoricalRate(currency, "BRL", date)
+	if err != nil || market <= 0 {
+		h.Logger.Warn("Historical rate fetch failed; leaving exchange_rate unset (will fall back to current rate)", zap.Error(err))
+		return 0
+	}
+
+	s := GetSettings(h.DB)
+	iof := s.IOFBuyRate
+	if txType == models.Sell {
+		iof = s.IOFSellRate
+	}
+	return market * (1 + iof)
+}
+
 // Create handles POST /transactions
 func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var tx models.Transaction
@@ -106,6 +129,12 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Ensure the Stock Ticker exists in our Price Cache table
 	h.ensureStockExists(tx.Symbol, tx.Currency)
+
+	// 3b. Snapshot the effective purchase-day rate (FX + IOF) unless the client
+	// supplied one (e.g. the exact rate from a broker note).
+	if tx.ExchangeRate <= 0 {
+		tx.ExchangeRate = h.computeExchangeRate(tx.Currency, tx.Type, tx.Date)
+	}
 
 	// 4. Save Transaction to Database
 	if err := h.DB.Create(&tx).Error; err != nil {
@@ -235,6 +264,14 @@ func (h *TransactionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		existing.Currency = "USD"
 	}
 
+	// Honor a client-supplied rate (manual override); otherwise recompute from
+	// the (possibly changed) currency/type/date.
+	if body.ExchangeRate > 0 {
+		existing.ExchangeRate = body.ExchangeRate
+	} else {
+		existing.ExchangeRate = h.computeExchangeRate(existing.Currency, existing.Type, existing.Date)
+	}
+
 	// 4. Save
 	if err := h.DB.Save(&existing).Error; err != nil {
 		h.Logger.Error("Failed to update transaction", zap.Error(err))
@@ -356,13 +393,14 @@ func (h *TransactionHandler) ImportExcel(w http.ResponseWriter, r *http.Request)
 		}
 
 		tx := models.Transaction{
-			Symbol:   symbol,
-			Type:     models.Buy,
-			Quantity: float32(quantity),
-			Price:    price,
-			Fee:      fee,
-			Currency: currency,
-			Date:     date,
+			Symbol:       symbol,
+			Type:         models.Buy,
+			Quantity:     float32(quantity),
+			Price:        price,
+			Fee:          fee,
+			Currency:     currency,
+			Date:         date,
+			ExchangeRate: h.computeExchangeRate(currency, models.Buy, date),
 		}
 
 		if err := h.DB.Create(&tx).Error; err != nil {
@@ -407,4 +445,40 @@ func (h *TransactionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	h.Logger.Infof("Transaction %s deleted successfully", id)
 	w.WriteHeader(http.StatusNoContent) // 204 No Content
+}
+
+// BackfillRates handles POST /transactions/backfill-rates. It fills the
+// effective exchange rate for transactions that don't have one yet
+// (exchange_rate <= 0), using the historical purchase-day rate. It is
+// idempotent and safe to re-run; rows that already have a rate are left alone.
+func (h *TransactionHandler) BackfillRates(w http.ResponseWriter, r *http.Request) {
+	var txs []models.Transaction
+	if err := h.DB.Where("exchange_rate IS NULL OR exchange_rate <= 0").Find(&txs).Error; err != nil {
+		h.Logger.Error("Failed to load transactions for backfill", zap.Error(err))
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	updated, failed := 0, 0
+	for _, t := range txs {
+		rate := h.computeExchangeRate(t.Currency, t.Type, t.Date)
+		if rate <= 0 {
+			failed++
+			continue
+		}
+		if err := h.DB.Model(&models.Transaction{}).Where("id = ?", t.ID).Update("exchange_rate", rate).Error; err != nil {
+			h.Logger.Warn("Failed to update exchange_rate during backfill", zap.String("id", t.ID), zap.Error(err))
+			failed++
+			continue
+		}
+		updated++
+	}
+
+	h.Logger.Infof("Backfill rates: %d updated, %d failed, %d candidates", updated, failed, len(txs))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{
+		"updated":    updated,
+		"failed":     failed,
+		"candidates": len(txs),
+	})
 }

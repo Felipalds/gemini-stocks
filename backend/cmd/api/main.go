@@ -37,7 +37,7 @@ func main() {
 
 	// Auto-Migrate Models
 	// This will create the "transactions" table in SQLite automatically
-	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.TickerHistory{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}, &models.Dividend{}); err != nil {
+	if err := db.AutoMigrate(&models.Transaction{}, &models.Ticker{}, &models.TickerHistory{}, &models.PortfolioGoal{}, &models.GoalAllocation{}, &models.Currency{}, &models.Expense{}, &models.Budget{}, &models.ExpenseCategory{}, &models.MerchantAlias{}, &models.FixedBalance{}, &models.PortfolioSnapshot{}, &models.Dividend{}, &models.Setting{}); err != nil {
 		sugar.Fatalf("Database migration failed: %v", err)
 	}
 
@@ -76,6 +76,7 @@ func main() {
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(db, sugar)
 	portfolioHistoryHandler := handlers.NewPortfolioHistoryHandler(db, sugar, financeService)
 	dividendHandler := handlers.NewDividendHandler(db, sugar, financeService)
+	settingHandler := handlers.NewSettingHandler(db, sugar)
 
 	// Basic Middleware
 	r.Use(middleware.RequestID) // Unique ID for each request
@@ -92,6 +93,7 @@ func main() {
 		r.Post("/", transactionHandler.Create)
 		r.Get("/", transactionHandler.GetAll)
 		r.Post("/import", transactionHandler.ImportExcel)
+		r.Post("/backfill-rates", transactionHandler.BackfillRates)
 		r.Put("/{id}", transactionHandler.Update)
 		r.Delete("/{id}", transactionHandler.Delete)
 	})
@@ -122,9 +124,16 @@ func main() {
 	r.Route("/currencies", func(r chi.Router) {
 		r.Get("/", currencyHandler.GetCurrencies)
 		r.Get("/usd", currencyHandler.GetUSDRate)
+		r.Put("/usd", currencyHandler.SetUSDRate)
 		r.Get("/btc", currencyHandler.GetBTCRate)
+		r.Get("/rate", currencyHandler.GetEffectiveRate)
 		r.Post("/refresh", currencyHandler.RefreshUSDRate)
 		r.Post("/btc/refresh", currencyHandler.RefreshBTCRate)
+	})
+
+	r.Route("/settings", func(r chi.Router) {
+		r.Get("/", settingHandler.Get)
+		r.Put("/", settingHandler.Update)
 	})
 
 	r.Route("/expenses", func(r chi.Router) {
