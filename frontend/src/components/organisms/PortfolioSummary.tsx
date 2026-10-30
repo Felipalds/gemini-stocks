@@ -38,14 +38,8 @@ export function PortfolioSummary({
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 
-  const {
-    totalUSD,
-    totalBRL,
-    totalPnlUSD,
-    totalPnlBRL,
-    assetSlices,
-    categorySlices,
-  } = useMemo(() => {
+  const { totalUSD, totalInBRL, totalPnlInBRL, assetSlices, categorySlices } =
+    useMemo(() => {
     const categoryMap = new Map<string, string>();
     for (const sp of stockPrices) {
       categoryMap.set(sp.symbol, sp.category || "Other");
@@ -68,7 +62,15 @@ export function PortfolioSummary({
 
     for (const t of transactions) {
       const txCurrency = (t.currency || "USD").toUpperCase();
-      const rate = txCurrency === "USD" ? dollarRate : 1;
+      // Market value at today's rate; cost at the rate actually paid on the
+      // purchase date (0 → not backfilled → fall back to today's rate).
+      const marketRate = txCurrency === "USD" ? dollarRate : 1;
+      const costRate =
+        txCurrency === "USD"
+          ? t.exchange_rate && t.exchange_rate > 0
+            ? t.exchange_rate
+            : dollarRate
+          : 1;
 
       const entry = symbolMap.get(t.symbol) ?? {
         buyQuantity: 0,
@@ -83,25 +85,27 @@ export function PortfolioSummary({
 
       if (t.type === "BUY") {
         entry.buyQuantity += t.quantity;
-        entry.totalBuyCostBrl += t.quantity * t.price * rate;
+        entry.totalBuyCostBrl += t.quantity * t.price * costRate;
       } else {
         entry.sellQuantity += t.quantity;
       }
 
-      entry.totalFeesBrl += (t.fee || 0) * rate;
+      entry.totalFeesBrl += (t.fee || 0) * costRate;
 
       // Backend returns current_price in the transaction's own currency.
       if (t.current_price) {
-        entry.currentPriceBrl = t.current_price * rate;
+        entry.currentPriceBrl = t.current_price * marketRate;
       }
 
       symbolMap.set(t.symbol, entry);
     }
 
-    let usdValue = 0;
-    let brlValue = 0;
-    let usdCostBasis = 0;
-    let brlCostBasis = 0;
+    // Everything rolls up directly in BRL: market value at today's rate, cost at
+    // the historical purchase-day rate, so PnL includes the currency (FX) gain.
+    // usdMarketValue is kept only for the informational "in dollar" line.
+    let marketBrl = 0;
+    let costBrl = 0;
+    let usdMarketValue = 0;
     const chartSlices: PieSlice[] = [];
     const catTotals = new Map<string, number>();
 
@@ -118,14 +122,11 @@ export function PortfolioSummary({
         data.buyQuantity > 0 ? data.totalBuyCostBrl / data.buyQuantity : 0;
       const costBasisBrl = netQuantity * avgBuyPriceBrl;
 
-      // Positions bought entirely in USD are reported in the USD bucket (values
-      // divided back out of BRL). Anything mixed (like BTC) is BRL-only.
+      marketBrl += valueBrl;
+      costBrl += costBasisBrl + data.totalFeesBrl;
+      // Positions bought entirely in USD also feed the informational USD total.
       if (isUsdOnly && dollarRate > 0) {
-        usdValue += valueBrl / dollarRate;
-        usdCostBasis += (costBasisBrl + data.totalFeesBrl) / dollarRate;
-      } else {
-        brlValue += valueBrl;
-        brlCostBasis += costBasisBrl + data.totalFeesBrl;
+        usdMarketValue += valueBrl / dollarRate;
       }
 
       const absValue = Math.abs(valueBrl);
@@ -142,11 +143,12 @@ export function PortfolioSummary({
       const amount = fb.amount || 0;
       const currency = fb.currency || "BRL";
       if (currency === "BRL") {
-        brlValue += amount;
-        brlCostBasis += amount;
+        marketBrl += amount;
+        costBrl += amount;
       } else {
-        usdValue += amount;
-        usdCostBasis += amount;
+        marketBrl += amount * dollarRate;
+        costBrl += amount * dollarRate;
+        usdMarketValue += amount;
       }
 
       const valueInBRL = currency === "BRL" ? amount : amount * dollarRate;
@@ -163,17 +165,14 @@ export function PortfolioSummary({
     catSlices.sort((a, b) => b.value - a.value);
 
     return {
-      totalUSD: usdValue,
-      totalBRL: brlValue,
-      totalPnlUSD: usdValue - usdCostBasis,
-      totalPnlBRL: brlValue - brlCostBasis,
+      totalUSD: usdMarketValue,
+      totalInBRL: marketBrl,
+      totalPnlInBRL: marketBrl - costBrl,
       assetSlices: chartSlices,
       categorySlices: catSlices,
     };
   }, [transactions, stockPrices, fixedBalances, dollarRate, assetFilter]);
 
-  const totalInBRL = totalBRL + totalUSD * dollarRate;
-  const totalPnlInBRL = totalPnlBRL + totalPnlUSD * dollarRate;
   const isPnlPositive = totalPnlInBRL >= 0;
 
   const formattedRateDate = dollarRateUpdatedAt

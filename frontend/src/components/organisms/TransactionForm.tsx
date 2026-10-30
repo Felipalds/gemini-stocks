@@ -1,4 +1,5 @@
-import { useForm, type Resolver } from "react-hook-form";
+import { useEffect, useRef } from "react";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,10 @@ export const transactionFormSchema = z.object({
   currency: z.enum(["USD", "BRL"]),
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date"),
   note: z.string().optional(),
+  // Effective USD→BRL rate (FX + IOF) paid on the purchase date. Auto-filled for
+  // USD transactions, editable to match a broker note. Omitted/0 → backend
+  // computes it from the date.
+  exchange_rate: z.coerce.number().optional(),
 });
 
 export type TransactionFormValues = z.infer<typeof transactionFormSchema>;
@@ -80,6 +85,29 @@ export function TransactionFormFields({
       ...defaultValues,
     },
   });
+
+  // Auto-fill the USD→BRL rate (historical FX + IOF) from the purchase date.
+  // We don't overwrite a rate the user already has — an existing one when editing,
+  // or one they've typed themselves (tracked via rateManuallySet).
+  const [currency, date, txType] = useWatch({
+    control: form.control,
+    name: ["currency", "date", "type"],
+  });
+  const rateManuallySet = useRef(Boolean(defaultValues?.exchange_rate));
+
+  useEffect(() => {
+    if (currency !== "USD") return;
+    if (rateManuallySet.current) return;
+    const params = new URLSearchParams({ from: "USD", date, type: txType });
+    fetch(`http://localhost:8080/currencies/rate?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.rate === "number" && d.rate > 0) {
+          form.setValue("exchange_rate", Number(d.rate.toFixed(4)));
+        }
+      })
+      .catch(() => {});
+  }, [currency, date, txType, form]);
 
   return (
     <Form {...form}>
@@ -205,6 +233,37 @@ export function TransactionFormFields({
             </FormItem>
           )}
         />
+
+        {/* Exchange rate (USD only) — the effective BRL cost of each dollar */}
+        {currency === "USD" && (
+          <FormField
+            control={form.control}
+            name="exchange_rate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>USD → BRL rate (incl. IOF)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    placeholder="auto-filled from the purchase date"
+                    {...field}
+                    value={field.value ?? ""}
+                    onChange={(e) => {
+                      rateManuallySet.current = true;
+                      field.onChange(e);
+                    }}
+                  />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Auto-filled from the historical rate on the transaction date plus
+                  IOF. Edit it to match your broker note for exact cost.
+                </p>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         {/* Date */}
         <FormField

@@ -142,6 +142,10 @@ export interface Transaction {
   fee: number;
   note: string;
   date: string;
+  // Effective all-in rate (FX + IOF) from `currency` to BRL, snapshotted at the
+  // purchase date. 1 for BRL; 0/undefined means "not set" → fall back to the
+  // current dollar rate (never multiply by 0).
+  exchange_rate?: number;
 
   // --- New Calculated Fields (Optional) ---
   // They are optional (?) because they might not exist

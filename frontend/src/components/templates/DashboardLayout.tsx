@@ -27,6 +27,8 @@ import {
   Wallet,
   Coins,
   Menu,
+  HelpCircle,
+  Settings,
 } from "lucide-react";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 
@@ -175,6 +177,19 @@ export function DashboardLayout({
                       Goal
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/qa">
+                      <HelpCircle className="mr-2 h-4 w-4" />
+                      Q&amp;A / Docs
+                    </Link>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
