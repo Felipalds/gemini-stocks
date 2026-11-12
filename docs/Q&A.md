@@ -9,7 +9,7 @@
 > a question is answered, or a fact about how the system works is discovered,
 > add/update an entry here in the same change.
 
-_Last updated: 2026-10-30 (purchase-day rate + currency toggle shipped; tests, docs, React Q&A page added)._
+_Last updated: 2026-11-12 (password-protected PDF import; category combobox search fix)._
 
 ---
 
@@ -159,6 +159,47 @@ Frontend:
 - [x] Unit tests: backend `go test ./...` (`pickHistoricalClose`, IOF, settings);
       frontend `npm test` via vitest (`src/lib/rates.ts`).
 - [x] Feature docs: `docs/currency-and-fx.md`.
+
+---
+
+## Topic: Password-protected statement PDFs (Inter)
+
+### Q: Inter now locks its credit-card PDF with a password — can we still import it?
+**A: Yes, the user types the password and the backend decrypts it.**
+- The import upload (`POST /expenses/import`) accepts an optional `password` form
+  field alongside `file` and `bank`.
+- `statements.ExtractText` first runs the PDF through `decryptIfEncrypted`
+  (pdfcpu): unencrypted files pass through untouched; encrypted files are
+  decrypted in memory with the supplied password (tried as both the user and
+  owner password), then handed to the existing `ledongthuc/pdf` text extractor.
+- The extractor library (`ledongthuc/pdf`) can't open encrypted PDFs, so
+  **pdfcpu** (`github.com/pdfcpu/pdfcpu`) was added purely for the decrypt step.
+
+### Q: How does the UI know to ask for a password?
+**A: A structured 422 response, not a generic error.** When the PDF is encrypted
+and the password is missing/wrong, the handler returns `422` with
+`{ "password_required": true, "wrong_password"?: true, "error": "…" }`. The
+Expenses page stashes the chosen file, opens a password dialog, and re-uploads
+the same file with the typed password. A wrong password reopens the dialog with
+an inline error. The password is only used to decrypt and is never stored.
+
+---
+
+## Topic: Category combobox inside dialogs (import / edit)
+
+### Q: Why couldn't I type in the category search field when importing a credit-card statement?
+**A: The popover was portaled outside the dialog's focus scope.** `CategorySelect`
+is a Radix Popover whose content defaults to a portal on `document.body`. When the
+combobox is rendered inside the modal **Import preview** Dialog, the dialog's focus
+trap sits between that body-level popover and its search input: clicks register
+(the popover is `modal`) but keystrokes get yanked back into the dialog, so typing
+is dead.
+
+**Fix:** `PopoverContent` now accepts a `container` prop, and `CategorySelect`
+resolves the nearest `[role="dialog"]` ancestor on open and portals the popover
+into it. The search input then lives inside the dialog's focus scope and accepts
+typing. Outside a dialog (e.g. the standalone "New Expense" form) `container` is
+`null`, so it still portals to the body as before.
 
 ---
 

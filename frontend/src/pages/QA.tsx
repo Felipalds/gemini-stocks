@@ -114,9 +114,58 @@ const SECTIONS: Section[] = [
       },
     ],
   },
+  {
+    id: "pdf-password",
+    title: "Password-protected statement PDFs",
+    items: [
+      {
+        q: "Inter now locks its credit-card PDF with a password — can I still import it?",
+        a: (
+          <>
+            Yes. The import upload accepts an optional <code>password</code>, and
+            the backend decrypts the PDF in memory (via <code>pdfcpu</code>) before
+            the usual text extraction. Unencrypted files are untouched; the
+            password is only used to decrypt and is never stored.
+          </>
+        ),
+      },
+      {
+        q: "How does the app know to ask for the password?",
+        a: (
+          <>
+            A locked PDF returns <code>422</code> with{" "}
+            <code>password_required: true</code>. The Expenses page keeps the
+            chosen file, opens a password dialog, and re-uploads the same file with
+            what you type. A wrong password reopens the dialog with an inline error.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "category-select",
+    title: "Category combobox inside dialogs",
+    items: [
+      {
+        q: "Why couldn't I type in the category search when importing a credit-card statement?",
+        a: (
+          <>
+            The category combobox is a Radix Popover whose content was portaled to{" "}
+            <code>document.body</code>. Inside the modal import Dialog, the dialog's
+            focus trap sat between that body-level popover and its search input:
+            clicks worked (the popover is <code>modal</code>) but keystrokes were
+            pulled back into the dialog. Fix: the popover now portals into the
+            nearest <code>[role="dialog"]</code> element, so the search input lives
+            inside the dialog's focus scope and accepts typing.
+          </>
+        ),
+      },
+    ],
+  },
 ];
 
 const BACKEND_STATUS = [
+  "Encrypted PDF import: password form field + pdfcpu decrypt",
   "Transaction.ExchangeRate column",
   "Setting singleton + GET/PUT /settings",
   "GetHistoricalRate (USDBRL=X)",
@@ -127,6 +176,7 @@ const BACKEND_STATUS = [
 ];
 
 const FRONTEND_STATUS = [
+  "Password prompt + retry for encrypted statement imports",
   "exchange_rate on Transaction + editable form field",
   "Dashboard + PortfolioSummary split cost vs market",
   "Global + per-card BRL⇄USD toggle",
