@@ -11,9 +11,19 @@ const PopoverAnchor = PopoverPrimitive.Anchor
 
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
-  <PopoverPrimitive.Portal>
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
+    /**
+     * Portal target. Pass the surrounding dialog's content element when this
+     * popover is rendered inside a modal Dialog, otherwise the body-portaled
+     * content sits outside the dialog's focus scope and inputs inside it
+     * (e.g. a command/search field) can't receive keystrokes.
+     */
+    container?: React.ComponentPropsWithoutRef<
+      typeof PopoverPrimitive.Portal
+    >["container"]
+  }
+>(({ className, align = "center", sideOffset = 4, container, ...props }, ref) => (
+  <PopoverPrimitive.Portal container={container}>
     <PopoverPrimitive.Content
       ref={ref}
       align={align}

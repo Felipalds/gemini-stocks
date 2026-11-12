@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   Popover,
@@ -61,6 +61,11 @@ export function CategorySelect({
   const [promptOpen, setPromptOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // When this combobox lives inside a modal Dialog, portal the popover into the
+  // dialog's content so its search input stays within the dialog's focus scope;
+  // otherwise the dialog's focus trap steals keystrokes and typing is dead.
+  const [container, setContainer] = useState<HTMLElement | null>(null);
 
   // A modal Popover closed programmatically (e.g. after picking/creating a
   // category) can leave `pointer-events: none` stuck on <body>, freezing the
@@ -138,12 +143,22 @@ export function CategorySelect({
         modal
         open={open}
         onOpenChange={(o) => {
+          if (o) {
+            // Resolve the portal target lazily on open: the nearest dialog
+            // content element if any, else leave it on the body.
+            setContainer(
+              (triggerRef.current?.closest(
+                '[role="dialog"]'
+              ) as HTMLElement | null) ?? null
+            );
+          }
           setOpen(o);
           if (!o) setSearch("");
         }}
       >
         <PopoverTrigger asChild>
           <Button
+            ref={triggerRef}
             id={id}
             type="button"
             variant="outline"
@@ -161,6 +176,7 @@ export function CategorySelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent
+          container={container}
           className="w-[var(--radix-popover-trigger-width)] min-w-[240px] p-0"
           align="start"
         >
