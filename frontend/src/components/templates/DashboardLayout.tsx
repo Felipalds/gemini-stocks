@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,8 +25,6 @@ import {
   EyeOff,
   Target,
   List,
-  Wallet,
-  Coins,
   Menu,
   HelpCircle,
   Settings,
@@ -76,9 +75,37 @@ export function DashboardLayout({
   currencyView,
   onToggleCurrencyView,
 }: DashboardLayoutProps) {
+  const { pathname } = useLocation();
+  const tabs = [
+    { label: "MAIN", to: "/", active: pathname === "/" || pathname.startsWith("/ticker") },
+    { label: "NEWS", to: "/news", active: pathname.startsWith("/news") },
+    { label: "DIVIDENDS", to: "/dividends", active: pathname.startsWith("/dividends") },
+    { label: "EXPENSES", to: "/expenses", active: pathname.startsWith("/expenses") },
+  ];
+
   return (
-    <div className="min-h-screen bg-muted/40 p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-muted/40 font-sans">
+      {/* Full-width tab bar (browser-style): the active tab blends into the page below */}
+      <nav className="w-full border-b bg-background">
+        <div className="flex">
+          {tabs.map((t) => (
+            <Link
+              key={t.to}
+              to={t.to}
+              className={cn(
+                "flex-1 border-b-2 px-4 py-3 text-center text-sm font-semibold tracking-wide transition-colors",
+                t.active
+                  ? "border-primary bg-muted/40 text-foreground"
+                  : "border-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+              )}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </div>
+      </nav>
+
+      <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8">
         <header className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <Link to="/">
@@ -131,20 +158,6 @@ export function DashboardLayout({
                 <Button variant="outline" title="New transaction">
                   <Plus className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">New Transaction</span>
-                </Button>
-              </Link>
-
-              <Link to="/expenses">
-                <Button variant="outline" title="Expenses">
-                  <Wallet className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Expenses</span>
-                </Button>
-              </Link>
-
-              <Link to="/dividends">
-                <Button variant="outline" title="Dividends">
-                  <Coins className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Dividends</span>
                 </Button>
               </Link>
 

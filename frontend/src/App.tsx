@@ -4,6 +4,7 @@ import DashboardPage from "@/pages/Dashboard";
 import AddTransactionPage from "@/pages/AddTransaction";
 import ExpensesPage from "@/pages/Expenses";
 import DividendsPage from "@/pages/Dividends";
+import NewsPage from "@/pages/News";
 import QAPage from "@/pages/QA";
 import SettingsPage from "@/pages/Settings";
 import { Toaster } from "@/components/ui/sonner";
@@ -20,6 +21,7 @@ function App() {
           <Route path="/add" element={<AddTransactionPage />} />
           <Route path="/expenses" element={<ExpensesPage />} />
           <Route path="/dividends" element={<DividendsPage />} />
+          <Route path="/news" element={<NewsPage />} />
           <Route path="/qa" element={<QAPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
