@@ -90,6 +90,10 @@ export function DividendsOverview({ hideValues }: DividendsOverviewProps) {
           <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
             {hideValues ? HIDDEN : formatCurrency(total, "BRL")} all time
           </p>
+          <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
+            {hideValues ? HIDDEN : formatCurrency(total / 12, "BRL")} / month
+            (total ÷ 12)
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button

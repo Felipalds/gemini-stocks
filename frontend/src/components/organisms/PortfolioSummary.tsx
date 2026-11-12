@@ -6,6 +6,7 @@ import { type StockPriceInfo } from "@/contexts/AppContext";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { classifyAssetClass, type AssetClass } from "@/lib/assetClass";
+import { marketRateBRL, costRateBRL, toUSD } from "@/lib/rates";
 import {
   PortfolioPieChart,
   type PieSlice,
@@ -21,6 +22,8 @@ interface PortfolioSummaryProps {
   hideValues?: boolean;
   /** Only holdings whose asset class is in this set count toward the total/charts. */
   assetFilter: Set<AssetClass>;
+  /** Display currency for the headline total / earnings. */
+  currencyView?: "BRL" | "USD";
 }
 
 const HIDDEN = "••••••";
@@ -33,6 +36,7 @@ export function PortfolioSummary({
   dollarRateUpdatedAt,
   hideValues,
   assetFilter,
+  currencyView = "BRL",
 }: PortfolioSummaryProps) {
   const [expanded, setExpanded] = useState(true);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
@@ -64,13 +68,8 @@ export function PortfolioSummary({
       const txCurrency = (t.currency || "USD").toUpperCase();
       // Market value at today's rate; cost at the rate actually paid on the
       // purchase date (0 → not backfilled → fall back to today's rate).
-      const marketRate = txCurrency === "USD" ? dollarRate : 1;
-      const costRate =
-        txCurrency === "USD"
-          ? t.exchange_rate && t.exchange_rate > 0
-            ? t.exchange_rate
-            : dollarRate
-          : 1;
+      const marketRate = marketRateBRL(txCurrency, dollarRate);
+      const costRate = costRateBRL(txCurrency, t.exchange_rate, dollarRate);
 
       const entry = symbolMap.get(t.symbol) ?? {
         buyQuantity: 0,
@@ -126,7 +125,7 @@ export function PortfolioSummary({
       costBrl += costBasisBrl + data.totalFeesBrl;
       // Positions bought entirely in USD also feed the informational USD total.
       if (isUsdOnly && dollarRate > 0) {
-        usdMarketValue += valueBrl / dollarRate;
+        usdMarketValue += toUSD(valueBrl, dollarRate);
       }
 
       const absValue = Math.abs(valueBrl);
@@ -175,6 +174,15 @@ export function PortfolioSummary({
 
   const isPnlPositive = totalPnlInBRL >= 0;
 
+  // USD view converts the BRL aggregates at today's rate (nominal). The headline
+  // total is market value, so a nominal conversion is the natural "in dollars" view.
+  const useUsd = currencyView === "USD";
+  const displayCurrency = useUsd ? "USD" : "BRL";
+  const displayTotal =
+    useUsd && dollarRate > 0 ? toUSD(totalInBRL, dollarRate) : totalInBRL;
+  const displayPnl =
+    useUsd && dollarRate > 0 ? toUSD(totalPnlInBRL, dollarRate) : totalPnlInBRL;
+
   const formattedRateDate = dollarRateUpdatedAt
     ? new Date(dollarRateUpdatedAt).toLocaleDateString("pt-BR", {
         day: "2-digit",
@@ -211,7 +219,7 @@ export function PortfolioSummary({
             />
           </div>
           <div className="text-3xl sm:text-4xl font-bold tracking-tight tabular-nums">
-            {hideValues ? HIDDEN : formatCurrency(totalInBRL, "BRL")}
+            {hideValues ? HIDDEN : formatCurrency(displayTotal, displayCurrency)}
           </div>
         </button>
 
@@ -230,13 +238,15 @@ export function PortfolioSummary({
                   >
                     {hideValues
                       ? HIDDEN
-                      : `${isPnlPositive ? "+" : ""}${formatCurrency(totalPnlInBRL, "BRL")} earnings`}
+                      : `${isPnlPositive ? "+" : ""}${formatCurrency(displayPnl, displayCurrency)} earnings`}
                   </p>
                   <div className="flex flex-col gap-1 text-sm text-muted-foreground pt-1">
                     <span>
                       {hideValues
                         ? HIDDEN
-                        : `${formatCurrency(totalUSD, "USD")} in dollar`}
+                        : useUsd
+                          ? `${formatCurrency(totalInBRL, "BRL")} in reais`
+                          : `${formatCurrency(totalUSD, "USD")} in dollar`}
                     </span>
                     <span>
                       USD 1 = R$ {dollarRate.toFixed(2)}

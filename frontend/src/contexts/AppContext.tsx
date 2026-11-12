@@ -35,6 +35,9 @@ interface AppContextValue {
   dollarRateUpdatedAt: string | null;
   hideValues: boolean;
   toggleHideValues: () => void;
+  /** Global default display currency for the dashboard (per-card overridable). */
+  currencyView: "BRL" | "USD";
+  toggleCurrencyView: () => void;
   refreshData: () => void;
   syncPrices: () => Promise<void>;
   /** Manually capture a portfolio snapshot (at most one per day, enforced server-side) */
@@ -57,6 +60,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [hideValues, setHideValues] = useState(false);
+  const [currencyView, setCurrencyView] = useState<"BRL" | "USD">("BRL");
   const [takingSnapshot, setTakingSnapshot] = useState(false);
   const [snapshotEpoch, setSnapshotEpoch] = useState(0);
 
@@ -171,6 +175,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHideValues((v) => !v);
   }, []);
 
+  const toggleCurrencyView = useCallback(() => {
+    setCurrencyView((v) => (v === "BRL" ? "USD" : "BRL"));
+  }, []);
+
   // Fetch once on mount. Snapshots are taken manually (see takeSnapshot).
   useEffect(() => {
     refreshData();
@@ -188,6 +196,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dollarRateUpdatedAt,
         hideValues,
         toggleHideValues,
+        currencyView,
+        toggleCurrencyView,
         refreshData,
         syncPrices,
         takeSnapshot,

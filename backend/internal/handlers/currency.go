@@ -121,16 +121,17 @@ func (h *CurrencyHandler) GetEffectiveRate(w http.ResponseWriter, r *http.Reques
 	}
 
 	s := GetSettings(h.DB)
-	iof := s.IOFBuyRate
+	kind := models.Buy
 	if txType == "SELL" {
-		iof = s.IOFSellRate
+		kind = models.Sell
 	}
+	iof := IOFFor(s, kind)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]float64{
 		"market": market,
 		"iof":    iof,
-		"rate":   market * (1 + iof),
+		"rate":   EffectiveRate(market, s, kind),
 	})
 }
 
