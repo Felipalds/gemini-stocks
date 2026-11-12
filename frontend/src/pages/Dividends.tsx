@@ -124,6 +124,10 @@ export default function DividendsPage() {
               <p className="text-2xl font-bold">
                 {mask(formatCurrency(summary?.total_brl ?? 0, "BRL"))}
               </p>
+              <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                {mask(formatCurrency((summary?.total_brl ?? 0) / 12, "BRL"))} /
+                month (total ÷ 12)
+              </p>
             </CardContent>
           </Card>
           <Card>

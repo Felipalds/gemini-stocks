@@ -97,12 +97,7 @@ func (h *TransactionHandler) computeExchangeRate(currency string, txType models.
 		return 0
 	}
 
-	s := GetSettings(h.DB)
-	iof := s.IOFBuyRate
-	if txType == models.Sell {
-		iof = s.IOFSellRate
-	}
-	return market * (1 + iof)
+	return EffectiveRate(market, GetSettings(h.DB), txType)
 }
 
 // Create handles POST /transactions

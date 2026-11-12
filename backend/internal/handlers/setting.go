@@ -34,6 +34,20 @@ func GetSettings(db *gorm.DB) models.Setting {
 	return s
 }
 
+// IOFFor returns the IOF fraction that applies to a transaction of the given type.
+func IOFFor(s models.Setting, txType models.TransactionType) float64 {
+	if txType == models.Sell {
+		return s.IOFSellRate
+	}
+	return s.IOFBuyRate
+}
+
+// EffectiveRate applies the type's IOF to a market rate, giving the all-in rate
+// stored on a transaction. Pure function so it is unit-testable.
+func EffectiveRate(market float64, s models.Setting, txType models.TransactionType) float64 {
+	return market * (1 + IOFFor(s, txType))
+}
+
 // Get handles GET /settings
 func (h *SettingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	s := GetSettings(h.DB)

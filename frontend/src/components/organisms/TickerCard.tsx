@@ -31,6 +31,14 @@ export interface TickerData {
   currentPriceOriginal?: number;
   pnlOriginal?: number;
   totalValueOriginal?: number;
+  // USD "view" of the position: USD-native assets show real dollars (pure-USD PnL,
+  // no FX); BRL/mixed assets are converted at the current rate. Used when the
+  // display currency is switched to USD. Falls back to the BRL figures if absent.
+  totalValueUsd?: number;
+  avgBuyPriceUsd?: number;
+  currentPriceUsd?: number;
+  pnlUsd?: number;
+  pnlPercentUsd?: number;
 }
 
 const HIDDEN = "••••••";
@@ -42,6 +50,8 @@ interface TickerCardProps {
   hideValues?: boolean;
   compact?: boolean;
   portfolioPercent?: number;
+  /** Global default display currency; overridable per card. */
+  currencyView?: "BRL" | "USD";
 }
 
 export function TickerCard({
@@ -51,25 +61,53 @@ export function TickerCard({
   hideValues,
   compact,
   portfolioPercent = 0,
+  currencyView = "BRL",
 }: TickerCardProps) {
   const navigate = useNavigate();
   const { symbol: routeSymbol } = useParams<{ symbol: string }>();
   const [editOpen, setEditOpen] = useState(false);
+  // Per-card override of the global currency view (null = follow global).
+  const [currencyOverride, setCurrencyOverride] = useState<
+    "BRL" | "USD" | null
+  >(null);
   // The detail dialog is open when the URL's /ticker/:symbol matches this card,
   // so clicking a square just navigates and the URL reflects the opened square.
   const detailOpen =
     !ticker.isFixed &&
     routeSymbol != null &&
     decodeURIComponent(routeSymbol) === ticker.symbol;
-  const fmt = (val: number) => formatCurrency(val, ticker.currency);
-  const fmtOriginal = (val: number) =>
-    formatCurrency(val, ticker.originalCurrency || "USD");
   const isFixed = !!ticker.isFixed;
-  const isPositive = ticker.pnl >= 0;
-  const hasOriginalCurrency = ticker.originalCurrency === "USD";
+
+  // Effective display currency: a per-card override wins over the global default.
+  const view = currencyOverride ?? currencyView;
+  const useUsd = view === "USD";
+  const dispCurrency = useUsd ? "USD" : "BRL";
+  const fmt = (val: number) => formatCurrency(val, dispCurrency);
+
+  // Pick the BRL or USD figure for each metric, falling back to BRL if the USD
+  // set is missing (e.g. no current price to convert).
+  const dTotalValue = useUsd
+    ? ticker.totalValueUsd ?? ticker.totalValue
+    : ticker.totalValue;
+  const dAvgBuy = useUsd
+    ? ticker.avgBuyPriceUsd ?? ticker.avgBuyPrice
+    : ticker.avgBuyPrice;
+  const dCurrent = useUsd
+    ? ticker.currentPriceUsd ?? ticker.currentPrice
+    : ticker.currentPrice;
+  const dPnl = useUsd ? ticker.pnlUsd ?? ticker.pnl : ticker.pnl;
+  const dPnlPercent = useUsd
+    ? ticker.pnlPercentUsd ?? ticker.pnlPercent
+    : ticker.pnlPercent;
+
+  // Secondary "also in" line shows the opposite currency so both are visible.
+  const otherCurrency = useUsd ? "BRL" : "USD";
+  const otherValue = useUsd ? ticker.totalValue : ticker.totalValueUsd;
+
+  const isPositive = dPnl >= 0;
 
   // Scale opacity from 0.08 (0%) to 0.35 (>=20%) based on |pnlPercent|
-  const intensity = Math.min(Math.abs(ticker.pnlPercent) / 20, 1);
+  const intensity = Math.min(Math.abs(dPnlPercent) / 20, 1);
   const alpha = isFixed ? 0.1 : 0.08 + intensity * 0.27;
   const bgColor = isFixed
     ? `rgba(100, 116, 139, ${alpha})`
@@ -127,8 +165,23 @@ export function TickerCard({
                     <TrendingDown className="mr-1 h-3 w-3" />
                   ))}
                 {isPositive ? "+" : ""}
-                {ticker.pnlPercent.toFixed(2)}%
+                {dPnlPercent.toFixed(2)}%
               </Badge>
+            )}
+            {!isFixed && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-[10px] font-semibold"
+                aria-label={`Show in ${otherCurrency}`}
+                title={`Show in ${otherCurrency}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrencyOverride(useUsd ? "BRL" : "USD");
+                }}
+              >
+                {useUsd ? "R$" : "$"}
+              </Button>
             )}
             <Button
               variant="ghost"
@@ -148,22 +201,21 @@ export function TickerCard({
         >
           <div>
             <div className={`${compact ? "text-lg" : "text-2xl"} font-bold`}>
-              {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+              {hideValues ? HIDDEN : fmt(dTotalValue)}
             </div>
-            {!compact &&
-              !isFixed &&
-              hasOriginalCurrency &&
-              ticker.totalValueOriginal !== undefined && (
-                <div className="text-xs text-muted-foreground">
-                  {hideValues ? HIDDEN : fmtOriginal(ticker.totalValueOriginal)}
-                </div>
-              )}
+            {!compact && !isFixed && otherValue !== undefined && (
+              <div className="text-xs text-muted-foreground">
+                {hideValues
+                  ? HIDDEN
+                  : formatCurrency(otherValue, otherCurrency)}
+              </div>
+            )}
           </div>
           {!compact && isFixed && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <span className="text-muted-foreground">Balance</span>
               <span className="text-right font-medium">
-                {hideValues ? HIDDEN : fmt(ticker.totalValue)}
+                {hideValues ? HIDDEN : fmt(dTotalValue)}
               </span>
             </div>
           )}
@@ -176,22 +228,12 @@ export function TickerCard({
 
               <span className="text-muted-foreground">Avg Buy Price</span>
               <span className="text-right font-medium">
-                {hideValues
-                  ? HIDDEN
-                  : hasOriginalCurrency &&
-                      ticker.avgBuyPriceOriginal !== undefined
-                    ? fmtOriginal(ticker.avgBuyPriceOriginal)
-                    : fmt(ticker.avgBuyPrice)}
+                {hideValues ? HIDDEN : fmt(dAvgBuy)}
               </span>
 
               <span className="text-muted-foreground">Current Price</span>
               <span className="text-right font-medium">
-                {hideValues
-                  ? HIDDEN
-                  : hasOriginalCurrency &&
-                      ticker.currentPriceOriginal !== undefined
-                    ? fmtOriginal(ticker.currentPriceOriginal)
-                    : fmt(ticker.currentPrice)}
+                {hideValues ? HIDDEN : fmt(dCurrent)}
               </span>
 
               <span className="text-muted-foreground">P&L</span>
@@ -204,11 +246,7 @@ export function TickerCard({
                       : "text-red-600"
                 }`}
               >
-                {hideValues
-                  ? HIDDEN
-                  : hasOriginalCurrency && ticker.pnlOriginal !== undefined
-                    ? `${isPositive ? "+" : ""}${fmtOriginal(ticker.pnlOriginal)}`
-                    : `${isPositive ? "+" : ""}${fmt(ticker.pnl)}`}
+                {hideValues ? HIDDEN : `${isPositive ? "+" : ""}${fmt(dPnl)}`}
               </span>
             </div>
           )}
@@ -224,7 +262,7 @@ export function TickerCard({
             >
               {hideValues
                 ? HIDDEN
-                : `P&L: ${isPositive ? "+" : ""}${fmt(ticker.pnl)}`}
+                : `P&L: ${isPositive ? "+" : ""}${fmt(dPnl)}`}
             </div>
           )}
 

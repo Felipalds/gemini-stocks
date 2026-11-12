@@ -17,6 +17,12 @@ import {
   classifyAssetClass,
   type AssetClass,
 } from "@/lib/assetClass";
+import {
+  marketRateBRL,
+  costRateBRL,
+  toUSD,
+  pnlPercent as percentOf,
+} from "@/lib/rates";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -30,6 +36,8 @@ export default function DashboardPage() {
     dollarRateUpdatedAt,
     hideValues,
     toggleHideValues,
+    currencyView,
+    toggleCurrencyView,
     refreshData,
     syncPrices,
   } = useApp();
@@ -81,6 +89,10 @@ export default function DashboardPage() {
         totalBuyCostOrig: number;
         totalFeesOrig: number;
         currentPriceOrig: number;
+        // USD "view": real dollars for USD buys, current-rate conversion for BRL.
+        totalBuyCostUsd: number;
+        totalFeesUsd: number;
+        currentPriceUsd: number;
       }
     >();
 
@@ -89,13 +101,12 @@ export default function DashboardPage() {
       // Market value uses today's rate (what it's worth now); cost uses the rate
       // actually paid on the purchase date (snapshotted on the transaction),
       // falling back to today's rate for rows not yet backfilled (never 0).
-      const marketRate = txCurrency === "USD" ? dollarRate : 1;
-      const costRate =
-        txCurrency === "USD"
-          ? t.exchange_rate && t.exchange_rate > 0
-            ? t.exchange_rate
-            : dollarRate
-          : 1;
+      const marketRate = marketRateBRL(txCurrency, dollarRate);
+      const costRate = costRateBRL(txCurrency, t.exchange_rate, dollarRate);
+      // USD view: USD buys keep their real dollars; BRL buys convert at today's
+      // rate. (0 when we have no rate — handled by leaving USD fields unset below.)
+      const costRateUsd = txCurrency === "USD" ? 1 : toUSD(1, dollarRate);
+      const marketRateUsd = costRateUsd;
 
       const entry = map.get(t.symbol) ?? {
         buyQuantity: 0,
@@ -107,6 +118,9 @@ export default function DashboardPage() {
         totalBuyCostOrig: 0,
         totalFeesOrig: 0,
         currentPriceOrig: 0,
+        totalBuyCostUsd: 0,
+        totalFeesUsd: 0,
+        currentPriceUsd: 0,
       };
 
       entry.currencies.add(txCurrency);
@@ -114,6 +128,7 @@ export default function DashboardPage() {
       if (t.type === "BUY") {
         entry.totalBuyCostBrl += t.quantity * t.price * costRate;
         entry.totalBuyCostOrig += t.quantity * t.price;
+        entry.totalBuyCostUsd += t.quantity * t.price * costRateUsd;
         entry.buyQuantity += t.quantity;
       } else {
         entry.sellQuantity += t.quantity;
@@ -121,6 +136,7 @@ export default function DashboardPage() {
 
       entry.totalFeesBrl += (t.fee || 0) * costRate;
       entry.totalFeesOrig += t.fee || 0;
+      entry.totalFeesUsd += (t.fee || 0) * costRateUsd;
 
       // The backend already returns current_price in the transaction's own
       // currency, so normalizing to BRL here yields a consistent per-symbol
@@ -128,6 +144,7 @@ export default function DashboardPage() {
       if (t.current_price) {
         entry.currentPriceBrl = t.current_price * marketRate;
         entry.currentPriceOrig = t.current_price;
+        entry.currentPriceUsd = t.current_price * marketRateUsd;
       }
 
       map.set(t.symbol, entry);
@@ -142,8 +159,7 @@ export default function DashboardPage() {
       const totalValue = netQuantity * data.currentPriceBrl;
       const totalCostBasis = netQuantity * avgBuyPriceBrl;
       const pnl = totalValue - totalCostBasis - data.totalFeesBrl;
-      const pnlPercent =
-        totalCostBasis !== 0 ? (pnl / totalCostBasis) * 100 : 0;
+      const pnlPercent = percentOf(pnl, totalCostBasis);
 
       const tickerData: TickerData = {
         symbol,
@@ -160,22 +176,38 @@ export default function DashboardPage() {
         updatedAt: updatedAtMap.get(symbol) ?? null,
       };
 
-      // Only positions bought entirely in USD can show meaningful "original
-      // USD" figures. Mixed-currency positions (like BTC) are BRL-only.
+      // USD view for every position: USD-native buys show real dollars (pure-USD
+      // PnL, no FX); BRL/mixed buys are converted at today's rate. Only set when we
+      // have a rate — otherwise the card falls back to the BRL figures.
+      if (dollarRate > 0) {
+        const avgBuyPriceUsd =
+          data.buyQuantity > 0 ? data.totalBuyCostUsd / data.buyQuantity : 0;
+        const totalValueUsd = netQuantity * data.currentPriceUsd;
+        const totalCostBasisUsd = netQuantity * avgBuyPriceUsd;
+        const pnlUsd = totalValueUsd - totalCostBasisUsd - data.totalFeesUsd;
+
+        tickerData.totalValueUsd = totalValueUsd;
+        tickerData.avgBuyPriceUsd = avgBuyPriceUsd;
+        tickerData.currentPriceUsd = data.currentPriceUsd;
+        tickerData.pnlUsd = pnlUsd;
+        tickerData.pnlPercentUsd = percentOf(pnlUsd, totalCostBasisUsd);
+      }
+
+      // Keep originalCurrency on pure-USD positions for other consumers
+      // (e.g. StockDetailDialog) that still read the *Original fields.
       const isUsdOnly =
         data.currencies.size === 1 && data.currencies.has("USD");
       if (isUsdOnly) {
         const avgBuyPriceUSD =
           data.buyQuantity > 0 ? data.totalBuyCostOrig / data.buyQuantity : 0;
-        const totalValueUSD = netQuantity * data.currentPriceOrig;
-        const totalCostBasisUSD = netQuantity * avgBuyPriceUSD;
-        const pnlUSD = totalValueUSD - totalCostBasisUSD - data.totalFeesOrig;
-
         tickerData.originalCurrency = "USD";
         tickerData.avgBuyPriceOriginal = avgBuyPriceUSD;
         tickerData.currentPriceOriginal = data.currentPriceOrig;
-        tickerData.pnlOriginal = pnlUSD;
-        tickerData.totalValueOriginal = totalValueUSD;
+        tickerData.pnlOriginal =
+          netQuantity * data.currentPriceOrig -
+          netQuantity * avgBuyPriceUSD -
+          data.totalFeesOrig;
+        tickerData.totalValueOriginal = netQuantity * data.currentPriceOrig;
       }
 
       result.push(tickerData);
@@ -183,13 +215,20 @@ export default function DashboardPage() {
 
     for (const fb of fixedBalances) {
       const rate = fb.currency === "USD" ? dollarRate : 1;
+      const brlAmount = fb.amount * rate;
+      const usdAmount =
+        fb.currency === "USD"
+          ? fb.amount
+          : dollarRate > 0
+            ? fb.amount / dollarRate
+            : undefined;
       result.push({
         symbol: fb.name,
         netQuantity: 1,
-        avgBuyPrice: fb.amount * rate,
-        currentPrice: fb.amount * rate,
+        avgBuyPrice: brlAmount,
+        currentPrice: brlAmount,
         dayChangePercent: 0,
-        totalValue: fb.amount * rate,
+        totalValue: brlAmount,
         pnl: 0,
         pnlPercent: 0,
         tags: [],
@@ -197,6 +236,11 @@ export default function DashboardPage() {
         currency: "BRL",
         isFixed: true,
         fixedBalanceId: fb.ID,
+        totalValueUsd: usdAmount,
+        avgBuyPriceUsd: usdAmount,
+        currentPriceUsd: usdAmount,
+        pnlUsd: 0,
+        pnlPercentUsd: 0,
       });
     }
 
@@ -285,6 +329,8 @@ export default function DashboardPage() {
       onAllTransactions={() => setAllTransactionsDialogOpen(true)}
       hideValues={hideValues}
       onToggleHideValues={toggleHideValues}
+      currencyView={currencyView}
+      onToggleCurrencyView={toggleCurrencyView}
     >
       <div className="mb-4">
         <GoalProgressCard
@@ -307,6 +353,7 @@ export default function DashboardPage() {
         dollarRateUpdatedAt={dollarRateUpdatedAt}
         hideValues={hideValues}
         assetFilter={assetFilter}
+        currencyView={currencyView}
       />
 
       {/* Dividends quick view: total + per-ticker pie + cumulative line */}
@@ -363,6 +410,7 @@ export default function DashboardPage() {
                 ticker={ticker}
                 onEdited={refreshData}
                 hideValues={hideValues}
+                currencyView={currencyView}
                 portfolioPercent={
                   totalPortfolioValue > 0
                     ? (Math.abs(ticker.totalValue) / totalPortfolioValue) * 100

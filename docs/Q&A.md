@@ -9,7 +9,7 @@
 > a question is answered, or a fact about how the system works is discovered,
 > add/update an entry here in the same change.
 
-_Last updated: 2026-10-30 (feature implemented)._
+_Last updated: 2026-10-30 (purchase-day rate + currency toggle shipped; tests, docs, React Q&A page added)._
 
 ---
 
@@ -87,6 +87,43 @@ cost, and is not involved here.
 
 ---
 
+## Topic: Currency view toggle (BRL ⇄ USD)
+
+### Q: Can the dashboard show values in both BRL and USD, with a button to switch?
+**A: Yes — a global default toggle plus a per-card override.**
+- A **global** BRL⇄USD toggle lives in the header (`DashboardLayout`), stored in
+  `AppContext` next to `hideValues` (`currencyView: "BRL" | "USD"`). It flips the
+  whole dashboard: every square **and** the Total portfolio summary.
+- Each **square** also has its own small button to override the global view for
+  that card only (`override ?? currencyView`).
+
+### Semantics of each view
+- **BRL view (default):** FX-aware. Market value at today's rate, cost basis at the
+  historical purchase-day rate → PnL includes the currency gain. (This is the
+  behavior shipped in the purchase-day-rate feature.)
+- **USD view:** per-asset / nominal. USD-native positions show their real dollars
+  (cost = raw USD price, value = current USD price → pure-USD PnL, no FX). BRL-native
+  and mixed positions (e.g. BTC bought in both) are converted at the *current* rate.
+  So switching to USD removes the FX component for dollar assets — that's the point
+  of the toggle (BRL = "what it meant in reais", USD = "how the asset itself did").
+
+### Why both are needed
+The per-ticker squares show an asset in a single currency. In BRL the % and amount
+should both be FX-aware; in USD both should be pure-asset. The toggle lets the user
+pick, instead of the previous mismatch (USD amount next to a BRL %).
+
+### Implementation plan (status)
+- [x] `AppContext`: `currencyView` state + `toggleCurrencyView` (default BRL).
+- [x] `DashboardLayout`: header toggle button (R$/$), props threaded through.
+- [x] `Dashboard`: compute a USD set (value/cost/pnl/%) for *every* ticker, not just
+      USD-only; pass `currencyView` to squares and summary.
+- [x] `TickerCard`: `currencyView` prop + per-card override button (shows "$"/"R$");
+      renders the chosen set and a secondary line in the opposite currency.
+- [x] `PortfolioSummary`: honors global `currencyView` for the Total + earnings
+      (nominal conversion at today's rate; secondary line flips to "in reais"/"in dollar").
+
+---
+
 ## Topic: Settings / Configuration page
 
 ### Q: Where do IOF & other config live and how are they edited?
@@ -117,7 +154,11 @@ Frontend:
 - [x] Cost-basis sites use per-tx `exchange_rate` for cost, `dollarRate` for market value, with `>0` fallback:
       `Dashboard.tsx`, `PortfolioSummary.tsx`. (`GoalProgressCard.tsx` only uses current market value → no change. `TransactionPreview.tsx` is a pre-save preview of entered values → no change.)
 - [x] `pages/Settings.tsx` + `/settings` route + ☰ menu link (USD rate, IOF buy/sell, backfill button).
-- [x] `pages/QA.tsx` + `/qa` route + ☰ menu link (renders this file as markdown via react-markdown + remark-gfm).
+- [x] `pages/QA.tsx` + `/qa` route + ☰ menu link — a **designed React/HTML page**
+      (TOC, Q&A cards, status checklist, callouts). Keep it in sync with this file.
+- [x] Unit tests: backend `go test ./...` (`pickHistoricalClose`, IOF, settings);
+      frontend `npm test` via vitest (`src/lib/rates.ts`).
+- [x] Feature docs: `docs/currency-and-fx.md`.
 
 ---
 

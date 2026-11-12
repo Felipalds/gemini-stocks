@@ -291,6 +291,36 @@ func (s *FinanceService) FetchDividends(symbol string, currency string) ([]Divid
 	return events, nil
 }
 
+// pickHistoricalClose returns the close with the greatest timestamp on or before
+// the end of the target day (skipping null/0 entries). If none qualifies — e.g.
+// the target predates the series — it returns the latest non-zero close. Returns
+// 0 when there is no usable data at all. Pure function so it is unit-testable.
+func pickHistoricalClose(timestamps []int64, closes []float64, target time.Time) float64 {
+	cutoff := target.Unix() + 86400 // end of the target day
+	best, bestTs := 0.0, int64(0)
+	for i, ts := range timestamps {
+		if i >= len(closes) {
+			break
+		}
+		c := closes[i]
+		if c == 0 {
+			continue
+		}
+		if ts < cutoff && ts >= bestTs {
+			bestTs, best = ts, c
+		}
+	}
+	if best == 0 {
+		for i := len(timestamps) - 1; i >= 0; i-- {
+			if i < len(closes) && closes[i] != 0 {
+				best = closes[i]
+				break
+			}
+		}
+	}
+	return best
+}
+
 // GetHistoricalRate returns the exchange rate from one currency to another on (or
 // just before) the given date, using Yahoo's "{FROM}{TO}=X" daily series. Yahoo
 // has no data on weekends/holidays, so it picks the most recent close on or
@@ -348,31 +378,7 @@ func (s *FinanceService) GetHistoricalRate(fromCurrency, toCurrency string, date
 	}
 	closes := res.Indicators.Quote[0].Close
 
-	// Pick the most recent close on/before the end of the target day.
-	target := date.Unix() + 86400
-	best, bestTs := 0.0, int64(0)
-	for i, ts := range res.Timestamp {
-		if i >= len(closes) {
-			break
-		}
-		c := closes[i]
-		if c == 0 {
-			continue
-		}
-		if ts <= target && ts >= bestTs {
-			bestTs, best = ts, c
-		}
-	}
-	// Fall back to the latest available close in the window (e.g. a date earlier
-	// than Yahoo's first datapoint).
-	if best == 0 {
-		for i := len(res.Timestamp) - 1; i >= 0; i-- {
-			if i < len(closes) && closes[i] != 0 {
-				best = closes[i]
-				break
-			}
-		}
-	}
+	best := pickHistoricalClose(res.Timestamp, closes, date)
 	if best == 0 {
 		return 0, fmt.Errorf("no historical rate for %s near %s", yahooSymbol, date.Format("2006-01-02"))
 	}

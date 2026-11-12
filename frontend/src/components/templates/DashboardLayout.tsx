@@ -43,6 +43,8 @@ interface DashboardLayoutProps {
   onAllTransactions?: () => void;
   hideValues?: boolean;
   onToggleHideValues?: () => void;
+  currencyView?: "BRL" | "USD";
+  onToggleCurrencyView?: () => void;
 }
 
 function IconTip({
@@ -71,6 +73,8 @@ export function DashboardLayout({
   onAllTransactions,
   hideValues,
   onToggleHideValues,
+  currencyView,
+  onToggleCurrencyView,
 }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/40 p-8 font-sans">
@@ -194,6 +198,26 @@ export function DashboardLayout({
               </DropdownMenu>
 
               <ModeToggle />
+
+              {onToggleCurrencyView && (
+                <IconTip
+                  label={
+                    currencyView === "USD"
+                      ? "Showing USD — switch to BRL"
+                      : "Showing BRL — switch to USD"
+                  }
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onToggleCurrencyView}
+                    aria-label="Toggle display currency"
+                    className="font-semibold text-xs"
+                  >
+                    {currencyView === "USD" ? "$" : "R$"}
+                  </Button>
+                </IconTip>
+              )}
 
               {onToggleHideValues && (
                 <IconTip label={hideValues ? "Show values" : "Hide values"}>
