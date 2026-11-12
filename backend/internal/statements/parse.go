@@ -36,9 +36,10 @@ func Parse(text string, bankOverride string) (*Preview, error) {
 	}, nil
 }
 
-// ParsePDFBytes normalizes, extracts text, and parses.
-func ParsePDFBytes(data []byte, bankOverride string) (*Preview, error) {
-	text, err := ExtractText(data)
+// ParsePDFBytes normalizes, extracts text (decrypting with password when the
+// PDF is protected), and parses.
+func ParsePDFBytes(data []byte, bankOverride, password string) (*Preview, error) {
+	text, err := ExtractText(data, password)
 	if err != nil {
 		return nil, err
 	}

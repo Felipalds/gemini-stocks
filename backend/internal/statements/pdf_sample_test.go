@@ -30,7 +30,7 @@ func TestParsePDFBytes_ShortMonthSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prev, err := ParsePDFBytes(data, BankNubank)
+	prev, err := ParsePDFBytes(data, BankNubank, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestParsePDFBytes_LongDateSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prev, err := ParsePDFBytes(data, BankInter)
+	prev, err := ParsePDFBytes(data, BankInter, "")
 	if err != nil {
 		t.Fatal(err)
 	}

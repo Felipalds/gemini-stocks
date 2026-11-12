@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +15,13 @@ import (
 )
 
 const maxStatementUpload = 10 << 20 // 10 MB
+
+// writeJSONStatus writes a JSON body with an explicit status code.
+func writeJSONStatus(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
 
 // ImportPreview handles POST /expenses/import
 // multipart: file (PDF), optional bank=auto|nubank|inter
@@ -48,9 +56,28 @@ func (h *ExpenseHandler) ImportPreview(w http.ResponseWriter, r *http.Request) {
 	if bank == "" {
 		bank = "auto"
 	}
+	password := r.FormValue("password")
 
-	preview, err := statements.ParsePDFBytes(data, bank)
+	preview, err := statements.ParsePDFBytes(data, bank, password)
 	if err != nil {
+		// Encrypted PDFs (e.g. Inter statements) need a password: answer with a
+		// structured 422 so the frontend can prompt for / retry the password
+		// instead of showing a generic parse error.
+		switch {
+		case errors.Is(err, statements.ErrPasswordRequired):
+			writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{
+				"error":             "This PDF is password protected. Enter its password to continue.",
+				"password_required": true,
+			})
+			return
+		case errors.Is(err, statements.ErrWrongPassword):
+			writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{
+				"error":             "Incorrect password. Please try again.",
+				"password_required": true,
+				"wrong_password":    true,
+			})
+			return
+		}
 		h.Logger.Warnw("statement parse failed", "err", err, "bank", bank)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

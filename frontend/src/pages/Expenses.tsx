@@ -412,6 +412,13 @@ export default function ExpensesPage() {
   const [importBank, setImportBank] = useState<"" | "nubank" | "inter">("");
   const [importParsing, setImportParsing] = useState(false);
   const [importConfirming, setImportConfirming] = useState(false);
+  // Password prompt for encrypted statements (e.g. Inter). When the backend
+  // reports the PDF is locked we stash the file and re-upload it with the
+  // password the user types here.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [importPassword, setImportPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const draftRef = useRef<ImportDraft | null>(loadImportDraft());
   const [previewBank, setPreviewBank] = useState(() => draftRef.current?.bank ?? "");
   const [previewWarnings, setPreviewWarnings] = useState<string[]>(
@@ -747,7 +754,7 @@ export default function ExpensesPage() {
     }
   }
 
-  async function onPickFile(file: File | null) {
+  function onPickFile(file: File | null) {
     if (!file) return;
     if (!importBank) {
       toast.error("Select a bank before importing");
@@ -757,16 +764,43 @@ export default function ExpensesPage() {
       toast.error("Only PDF files are supported");
       return;
     }
+    void parseStatement(file, "");
+  }
+
+  // Uploads the statement for parsing. When the PDF is password protected the
+  // backend answers 422 with { password_required: true }; we then open the
+  // password prompt instead of surfacing a raw error. `password` is empty on the
+  // first attempt and set when retrying from the prompt.
+  async function parseStatement(file: File, password: string) {
     setImportParsing(true);
     const toastId = toast.loading("Parsing statement...");
     try {
       const body = new FormData();
       body.append("file", file);
       body.append("bank", importBank);
+      if (password) body.append("password", password);
       const res = await fetch(`${API_BASE}/expenses/import`, {
         method: "POST",
         body,
       });
+
+      if (res.status === 422) {
+        const info = (await res.json().catch(() => null)) as {
+          password_required?: boolean;
+          wrong_password?: boolean;
+          error?: string;
+        } | null;
+        if (info?.password_required) {
+          setPendingFile(file);
+          setImportPassword(password);
+          setPasswordError(info.wrong_password ? info.error ?? "Incorrect password." : "");
+          setPasswordOpen(true);
+          toast.dismiss(toastId);
+          return;
+        }
+        throw new Error(info?.error || "Failed to parse PDF");
+      }
+
       if (!res.ok) throw new Error(await res.text());
       const preview = (await res.json()) as StatementImportPreview;
       setPreviewBank(preview.bank || importBank);
@@ -781,6 +815,11 @@ export default function ExpensesPage() {
       );
       setReplicatedSigs({});
       fetchCategories();
+      // Success: clear any pending password state and show the preview.
+      setPasswordOpen(false);
+      setPendingFile(null);
+      setImportPassword("");
+      setPasswordError("");
       setImportOpen(true);
       toast.success(`Parsed ${preview.lines?.length ?? 0} lines`, { id: toastId });
     } catch (err) {
@@ -793,6 +832,12 @@ export default function ExpensesPage() {
       setImportParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  function onSubmitPassword() {
+    const pw = importPassword.trim();
+    if (!pw || !pendingFile) return;
+    void parseStatement(pendingFile, pw);
   }
 
   async function onConfirmImport() {
@@ -1507,6 +1552,64 @@ export default function ExpensesPage() {
               {importConfirming ? "Importing..." : "Confirm import"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={passwordOpen}
+        onOpenChange={(o) => {
+          setPasswordOpen(o);
+          if (!o) {
+            // Abandoning the prompt discards the locked file and any typed password.
+            setPendingFile(null);
+            setImportPassword("");
+            setPasswordError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Password protected PDF</DialogTitle>
+            <DialogDescription>
+              This statement is encrypted. Enter its password to unlock and import
+              it. The password is only used to decrypt the file and is never stored.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSubmitPassword();
+            }}
+            className="space-y-2"
+          >
+            <Label htmlFor="pdf-password">PDF password</Label>
+            <Input
+              id="pdf-password"
+              type="password"
+              autoFocus
+              value={importPassword}
+              onChange={(e) => setImportPassword(e.target.value)}
+              placeholder="Statement password"
+            />
+            {passwordError && (
+              <p className="text-sm text-destructive">{passwordError}</p>
+            )}
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPasswordOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={importParsing || !importPassword.trim()}
+              >
+                {importParsing ? "Unlocking..." : "Unlock & parse"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
