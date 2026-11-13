@@ -4,9 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   Legend,
-  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -54,11 +52,54 @@ function money(n: number, hide?: boolean) {
   return formatCurrency(n, "BRL");
 }
 
-function pct(n: number | null | undefined, hide?: boolean) {
-  if (n == null || Number.isNaN(n)) return "—";
-  if (hide) return "•••";
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(1)}%`;
+// Period-over-period change. For expenses, spending MORE (positive) reads as the
+// "bad" direction, so up = red / down = green, always with an arrow + sign so it
+// never relies on color alone.
+function Delta({ value, hide }: { value: number | null; hide?: boolean }) {
+  if (value == null || Number.isNaN(value)) {
+    return <span className="text-xs text-muted-foreground">vs prev —</span>;
+  }
+  const up = value > 0;
+  return (
+    <div className="text-right shrink-0">
+      <div
+        className={`text-sm font-semibold ${up ? "text-red-600" : "text-emerald-600"}`}
+      >
+        {up ? "▲" : "▼"} {hide ? "•••" : `${Math.abs(value).toFixed(1)}%`}
+      </div>
+      <div className="text-xs text-muted-foreground">vs prev period</div>
+    </div>
+  );
+}
+
+// One small label/value (+ optional sub) in the compact stat strip.
+function Stat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div
+        className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+        title={label}
+      >
+        {label}
+      </div>
+      <div className="truncate text-sm font-semibold tabular-nums" title={value}>
+        {value}
+      </div>
+      {sub && (
+        <div className="truncate text-xs text-muted-foreground" title={sub}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type DrillGroup = {
@@ -246,17 +287,6 @@ function ExpenseAnalyticsPanelInner({
   }, [categoryPie]);
   const hasMore = categoryPie.length > TOP_N;
 
-  // Monthly totals within the period (ascending by key), capped so the bars
-  // stay readable for long ranges. `cumulative` is the running total, drawn as a
-  // rising line over the bars.
-  const monthlyBars = useMemo(() => {
-    let running = 0;
-    return (analytics?.monthly_series ?? []).slice(-24).map((b) => {
-      running += b.total_brl;
-      return { month: b.key, total: b.total_brl, cumulative: running };
-    });
-  }, [analytics]);
-
   const top5Bars = useMemo(
     () =>
       (analytics?.top_5 ?? []).map((row) => ({
@@ -281,67 +311,49 @@ function ExpenseAnalyticsPanelInner({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Kpi
-          title={`Total (${periodTitle})`}
-          value={money(analytics.period_total_brl, hideValues)}
-          hint={
-            analytics.period_delta_percent == null
-              ? "vs prev period —"
-              : `vs prev ${pct(analytics.period_delta_percent, hideValues)}`
-          }
-        />
-        <Kpi
-          title="Avg daily"
-          value={money(analytics.average_daily, hideValues)}
-        />
-        <Kpi
-          title="Avg monthly"
-          value={money(analytics.average_monthly, hideValues)}
-        />
-        <Kpi
-          title={`Largest (${periodTitle})`}
-          value={money(analytics.largest_in_period?.value_brl ?? 0, hideValues)}
-          hint={analytics.largest_in_period?.name || "—"}
-        />
-        <Kpi
-          title="Total (all time)"
-          value={money(analytics.total_spent_all_time_brl ?? 0, hideValues)}
-          hint={
-            analytics.largest_single
-              ? `Largest ever ${money(
-                  analytics.largest_single.value_brl,
-                  hideValues
-                )}`
-              : undefined
-          }
-        />
-      </div>
+      {/* Hero: the one headline (period total + change), then a thin strip of
+          smaller secondary stats — replaces the old grid of big KPI squares. */}
+      <Card>
+        <CardContent className="pt-6 pb-5">
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {periodTitle}
+              </div>
+              <div className="mt-1 text-3xl font-bold tabular-nums">
+                {money(analytics.period_total_brl, hideValues)}
+              </div>
+            </div>
+            <Delta value={analytics.period_delta_percent} hide={hideValues} />
+          </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
-          title="Top category"
-          value={analytics.top_category?.key || "—"}
-          hint={money(analytics.top_category?.total_brl ?? 0, hideValues)}
-        />
-        <Kpi
-          title="Top merchant"
-          value={analytics.top_name?.key || "—"}
-          hint={money(analytics.top_name?.total_brl ?? 0, hideValues)}
-        />
-        <Kpi
-          title="Top month"
-          value={analytics.top_month?.key || "—"}
-          hint={money(analytics.top_month?.total_brl ?? 0, hideValues)}
-        />
-        <Kpi
-          title="Top day"
-          value={analytics.top_day?.key || "—"}
-          hint={money(analytics.top_day?.total_brl ?? 0, hideValues)}
-        />
-      </div>
+          <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t pt-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat label="Avg / day" value={money(analytics.average_daily, hideValues)} />
+            <Stat label="Avg / month" value={money(analytics.average_monthly, hideValues)} />
+            <Stat
+              label="Largest"
+              value={money(analytics.largest_in_period?.value_brl ?? 0, hideValues)}
+              sub={analytics.largest_in_period?.name || undefined}
+            />
+            <Stat
+              label="Top category"
+              value={analytics.top_category?.key || "—"}
+              sub={money(analytics.top_category?.total_brl ?? 0, hideValues)}
+            />
+            <Stat
+              label="Top merchant"
+              value={analytics.top_name?.key || "—"}
+              sub={money(analytics.top_name?.total_brl ?? 0, hideValues)}
+            />
+            <Stat
+              label="All-time"
+              value={money(analytics.total_spent_all_time_brl ?? 0, hideValues)}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4">
         <Card>
           <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">
@@ -404,66 +416,6 @@ function ExpenseAnalyticsPanelInner({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Monthly spend ({periodTitle})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-72">
-            {monthlyBars.length === 0 ? (
-              <EmptyChart />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlyBars}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis
-                    yAxisId="monthly"
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(v) =>
-                      hideValues ? "••" : `${Math.round(Number(v) / 100) / 10}k`
-                    }
-                  />
-                  <YAxis
-                    yAxisId="cumulative"
-                    orientation="right"
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(v) =>
-                      hideValues ? "••" : `${Math.round(Number(v) / 100) / 10}k`
-                    }
-                  />
-                  <Tooltip
-                    isAnimationActive={false}
-                    formatter={(value, name) => [
-                      money(typeof value === "number" ? value : Number(value), hideValues),
-                      name,
-                    ]}
-                  />
-                  <Legend />
-                  <Bar
-                    yAxisId="monthly"
-                    dataKey="total"
-                    name="Monthly"
-                    fill="var(--color-chart-1)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Line
-                    yAxisId="cumulative"
-                    type="monotone"
-                    dataKey="cumulative"
-                    name="Cumulative"
-                    stroke="var(--color-chart-2)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 5 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
@@ -641,36 +593,6 @@ function ExpenseAnalyticsPanelInner({
         }
       />
     </div>
-  );
-}
-
-function Kpi({
-  title,
-  value,
-  hint,
-}: {
-  title: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-1 pt-4 px-4">
-        <CardTitle className="text-xs font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        <div className="text-lg font-semibold truncate" title={value}>
-          {value}
-        </div>
-        {hint && (
-          <div className="text-xs text-muted-foreground truncate" title={hint}>
-            {hint}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

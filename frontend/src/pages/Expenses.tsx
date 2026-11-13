@@ -54,6 +54,7 @@ import type {
 import { useApp } from "@/contexts/AppContext";
 import { formatCurrency } from "@/lib/format";
 import { ExpenseAnalyticsPanel } from "@/components/organisms/ExpenseAnalyticsPanel";
+import { ExpenseYearChart } from "@/components/organisms/ExpenseYearChart";
 import { CategorySelect } from "@/components/organisms/CategorySelect";
 import { DateField } from "@/components/molecules/DateField";
 import { ConfirmDialog } from "@/components/organisms/ConfirmDialog";
@@ -385,6 +386,24 @@ export default function ExpensesPage() {
   );
   const period =
     periodByValue.get(periodValue) ?? periodGroups[0].options[0];
+  // Quick-select buttons: the 3 previous months, the current month, and the
+  // current year. Values match the dropdown so selection stays in sync.
+  const quickPeriods = useMemo(() => {
+    const now = new Date();
+    const items: { value: string; label: string }[] = [];
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      items.push({
+        value: `month:${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
+        label: d.toLocaleDateString("en-US", { month: "short" }),
+      });
+    }
+    items.push({
+      value: `year:${now.getFullYear()}`,
+      label: String(now.getFullYear()),
+    });
+    return items;
+  }, []);
   const [editOpen, setEditOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -1043,35 +1062,46 @@ export default function ExpensesPage() {
       hideValues={hideValues}
       onToggleHideValues={toggleHideValues}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Overview
-        </h2>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="analytics-period" className="text-sm">
-            Period
-          </Label>
-          <Select value={periodValue} onValueChange={setPeriodValue}>
-            <SelectTrigger id="analytics-period" className="w-[200px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-80">
-              {periodGroups.map((g) => (
-                <SelectGroup key={g.label}>
-                  <SelectLabel>{g.label}</SelectLabel>
-                  {g.options.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Period quick-select: previous 3 months + current month + current year
+          as buttons; all other ranges live in the "More" dropdown. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {quickPeriods.map((b) => (
+          <Button
+            key={b.value}
+            type="button"
+            size="sm"
+            variant={periodValue === b.value ? "default" : "outline"}
+            onClick={() => setPeriodValue(b.value)}
+          >
+            {b.label}
+          </Button>
+        ))}
+        <Select value={periodValue} onValueChange={setPeriodValue}>
+          <SelectTrigger className="h-8 w-[150px]" aria-label="More periods">
+            <SelectValue placeholder="More…" />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            {periodGroups.map((g) => (
+              <SelectGroup key={g.label}>
+                <SelectLabel>{g.label}</SelectLabel>
+                {g.options.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="mb-6">
+      <div className="mb-6 space-y-6">
+        {/* Always-on current-year overview, independent of the selected period. */}
+        <ExpenseYearChart
+          hideValues={hideValues}
+          refreshKey={analyticsKey}
+          onSelectMonth={(key) => setPeriodValue(`month:${key}`)}
+        />
         <ExpenseAnalyticsPanel
           hideValues={hideValues}
           refreshKey={analyticsKey}
